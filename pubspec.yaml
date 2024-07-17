@@ -45,6 +45,7 @@ dependencies:
   image: ^4.2.0
   geocoding: ^3.0.0
   geolocator: ^12.0.0
+  logger: ^2.4.0
 
 dev_dependencies:
   flutter_test:

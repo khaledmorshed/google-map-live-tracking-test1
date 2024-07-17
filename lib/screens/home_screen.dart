@@ -12,6 +12,7 @@ import 'package:google_map_live_tracking/utils/app_config.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart' as loc;
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 
 import '../data/repositories/local/sqflite/sqf_lite_db.dart';
 
@@ -61,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   StreamSubscription<loc.LocationData>? locationSubscription;
   String currentAddress = "";
+  var logger = Logger();
 
 
   initialize()async{
@@ -72,9 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
     await fetchCurrentLocation();
     //fetching polyline points between source to destination
     //final coordinateList = await fetchPolylinePointsWithDirectionApi();
-    final coordinateList = await fetchPolylinePointsWithRouteApi();
-    //make path with the coordinate point between source to destination
-    generatePolyLineFromPoint(coordinateList);
+    // final coordinateList = await fetchPolylinePointsWithRouteApi();
+    // //make path with the coordinate point between source to destination
+    // generatePolyLineFromPoint(coordinateList);
   }
 
   @override
@@ -275,6 +277,9 @@ class _HomeScreenState extends State<HomeScreen> {
       //first time get location
       await locationController.getLocation().then((location)async{
         currentPosition = LatLng(location.latitude!, location.longitude!);
+        //LatLng(23.7221459, 90.4305929)
+       // LatLng(23.722445377416133, 90.43041910976171)
+        print("currenPostion....$currentPosition");
         //currentPosition =LatLng(23.726731821683835, 90.42114805430174);
         // Reverse geocode to get address
         currentAddress = await getAddressFromLatLng(currentPosition!);
@@ -335,6 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ));
       //listen or update for location changes
       locationSubscription = locationController.onLocationChanged.listen((currentLocation)async{
+        print("listen.......");
         if(currentLocation.latitude != null && currentLocation.longitude != null){
        //   originLocation =  LatLng(currentLocation.latitude!, currentLocation.longitude!);
           currentPosition = LatLng(currentLocation.latitude!, currentLocation.longitude!);
@@ -359,9 +365,14 @@ class _HomeScreenState extends State<HomeScreen> {
           });
 
           Timer(const Duration(seconds: 2), ()async{
+            // final coordinateList = await fetchPolylinePointsWithRouteApi();
+            // generatePolyLineFromPoint(coordinateList);
+          });
+
+          if (hasUserDeviatedFromPath(currentPosition!, polyLinesMap[PolylineId("polyline")]!.points, 20)) {
             final coordinateList = await fetchPolylinePointsWithRouteApi();
             generatePolyLineFromPoint(coordinateList);
-          });
+          }
 
             // googleMapController.animateCamera(CameraUpdate.newCameraPosition(
             //     CameraPosition(
@@ -380,37 +391,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  //fetching polyline points
-  Future<List<LatLng>> fetchPolylinePointsWithDirectionApi() async {
-
-    // final List<PointLatLng> waypoints = [
-    //   // Add intermediate waypoints if needed
-    //   //PointLatLng(23.7406, 90.3925), // Example waypoint
-    // ];
-
-    final polylinePoints = PolylinePoints();
-    final requestValue = PolylineRequest(
-      origin: PointLatLng(originLocation.latitude, originLocation.longitude),
-      destination: PointLatLng(destination.latitude, destination.longitude),
-      mode: TravelMode.driving,
-      //wayPoints: [PolylineWayPoint(location: "Sabo, Yaba Lagos Nigeria")],
-     // wayPoints: waypoints.map((wp) => PolylineWayPoint(location: "${wp.latitude},${wp.longitude}")).toList(),
-    );
-    try {
-      PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
-        googleApiKey: googleApiKey,
-        request: requestValue,
-      );
-      if (result.points.isNotEmpty) {
-        return result.points.map((point) => LatLng(point.latitude, point.longitude)).toList();
-      }
-    } catch (error) {
-      print("Error fetching route: $error");
-      // Handle error gracefully, e.g., show a message to the user
-    }
-    return [];
-  }
-
 
   Future<List<LatLng>> fetchPolylinePointsWithRouteApi() async {
     final url = Uri.parse(
@@ -423,6 +403,10 @@ class _HomeScreenState extends State<HomeScreen> {
     try{
       final response = await http.get(url);
       print("response.....3+${response}");
+
+
+      logger.d("Logger is working!");
+     // logger.i(response.body);
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
@@ -561,18 +545,89 @@ class _HomeScreenState extends State<HomeScreen> {
     return distanceInMeters <= thresholdInMeters;
   }
 
-  Future<String> getAddressFromLatLng(LatLng position) async {
+  Future<String> getAddressFromLatLng2(LatLng position) async {
     try {
       List<geoLoc.Placemark> placemarks = await geoLoc.placemarkFromCoordinates(position.latitude, position.longitude);
+      logger.i("placemarks: $placemarks");
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
-        return "${placemark.street}, ${placemark.locality}, ${placemark.country}";
+        return "${placemark.name}, ${placemark.locality}, ${placemark.country}";
       }
     } catch (e) {
       print("Error getting address: $e");
     }
     return "Unknown location";
   }
+
+
+  Future<String> getAddressFromLatLng(LatLng position) async {
+    try {
+      List<geoLoc.Placemark> placemarks = await geoLoc.placemarkFromCoordinates(position.latitude, position.longitude);
+     // logger.i("placemarks: $placemarks");
+      if (placemarks.isNotEmpty) {
+        // Function to calculate the distance between two coordinates
+        double calculateDistance(double startLatitude, double startLongitude, double endLatitude, double endLongitude) {
+           double distanceValue = Geolocator.distanceBetween(startLatitude, startLongitude, endLatitude, endLongitude);
+           print("distanceValue....$distanceValue");
+           return distanceValue;
+        }
+
+        // Function to approximate the position from the Placemark details
+        double approximateLatitude(geoLoc.Placemark placemark) {
+          // Use some logic to approximate latitude from the placemark details if available
+          return position.latitude; // Placeholder for actual logic
+        }
+
+        double approximateLongitude(geoLoc.Placemark placemark) {
+          // Use some logic to approximate longitude from the placemark details if available
+          return position.longitude; // Placeholder for actual logic
+        }
+
+        // Find the closest placemark
+        geoLoc.Placemark closestPlacemark = placemarks.reduce((current, next) {
+          print("currentPostion....lat=${position.latitude}....long=${position.longitude}");
+        //  print("next....lat=${current.positon.latitude}....long=${current.longitude}");
+          double currentDistance = calculateDistance(
+              position.latitude,
+              position.longitude,
+              approximateLatitude(current),
+              approximateLongitude(current)
+          );
+          double nextDistance = calculateDistance(
+              position.latitude,
+              position.longitude,
+              approximateLatitude(next),
+              approximateLongitude(next)
+          );
+          print("currentDistance....$currentDistance");
+          print("nextDistance....$nextDistance");
+          return currentDistance < nextDistance ? current : next;
+        });
+
+        return "${closestPlacemark.name}, ${closestPlacemark.locality}, ${closestPlacemark.country}";
+      }
+    } catch (e) {
+      print("Error getting address: $e");
+    }
+    return "Unknown location";
+  }
+
+
+  bool hasUserDeviatedFromPath(LatLng userLocation, List<LatLng> polylinePoints, double deviationThreshold) {
+    for (LatLng point in polylinePoints) {
+      double distance = Geolocator.distanceBetween(
+        userLocation.latitude,
+        userLocation.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      if (distance <= deviationThreshold) {
+        return false;
+      }
+    }
+    return true;
+  }
+
 
 
   Future<void> _deleteDatabase()async{
