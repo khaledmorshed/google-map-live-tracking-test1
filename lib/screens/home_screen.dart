@@ -45,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final locationController = loc.Location();
   //motijheel
   //23.726731821683835, 90.42114805430174
-  LatLng? currentPosition;
+  Position? currentPosition;
   Map<PolylineId, Polyline> polyLinesMap = {};
   List<PointLatLng> waypoints = [];
   final changeLatTextEditingController = TextEditingController();
@@ -71,7 +71,8 @@ class _HomeScreenState extends State<HomeScreen> {
     ///await _deleteDatabase();
     await clearData();
     await setCustomMarkerIcon();
-    await fetchCurrentLocation();
+    //await fetchCurrentLocation();
+    await getCurrentAddress();
     //fetching polyline points between source to destination
     //final coordinateList = await fetchPolylinePointsWithDirectionApi();
     // final coordinateList = await fetchPolylinePointsWithRouteApi();
@@ -161,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: ()async{
                           await cancelTracking();
                           await clearData();
-                          fetchCurrentLocation();
+                         // fetchCurrentLocation();
                         },
                         child: Text("end"),
                       ),
@@ -173,33 +174,40 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: GoogleMap(
                 myLocationEnabled: true,
+                trafficEnabled: true,
                 initialCameraPosition: CameraPosition(
-                    target: currentPosition!,
+                    target: LatLng(currentPosition!.latitude, currentPosition!.longitude),
                     zoom: 13,
                   ),
                 markers: {
                   Marker(
                       markerId: const MarkerId("currentLocation"),
                       icon: currentIcon,
-                      position: currentPosition!
+                      position: LatLng(currentPosition!.latitude, currentPosition!.longitude),
                   ),
-                   /*if(!isUpdateCurrentLocation)*/Marker(
-                      markerId: MarkerId("sourceLocation"),
-                      icon: originIcon,
-                      position: originLocation
-                  ),
-                   Marker(
-                      markerId: MarkerId("destinationLocation"),
-                      icon: destinationIcon,
-                      position: destination
-                  ),
+                  //  /*if(!isUpdateCurrentLocation)*/Marker(
+                  //     markerId: MarkerId("sourceLocation"),
+                  //     icon: originIcon,
+                  //     position: originLocation
+                  // ),
+                  //  Marker(
+                  //     markerId: MarkerId("destinationLocation"),
+                  //     icon: destinationIcon,
+                  //     position: destination
+                  // ),
                 },
                 polylines: Set<Polyline>.of(polyLinesMap.values),
                //  polylines: {
                //
                //  },
                 onTap: (LatLng tappedPoint) {
-                  print("tappedPoint...${tappedPoint}");
+                  print("TAPPOINT#...${tappedPoint}");
+                  setState(() {
+                    waypoints.add(PointLatLng(tappedPoint.latitude, tappedPoint.longitude));
+                  });
+                },
+                onLongPress: (LatLng tappedPoint) {
+                  print("LONPRESS#...${tappedPoint}");
                   setState(() {
                     waypoints.add(PointLatLng(tappedPoint.latitude, tappedPoint.longitude));
                   });
@@ -252,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   //fetch location for updating
-  Future<void> fetchCurrentLocation()async{
+  Future<void> fetchCurrentLocationWithLocationPackage()async{
     try{
       bool serviceEnable;
       loc.PermissionStatus permissionStatus;
@@ -292,6 +300,52 @@ class _HomeScreenState extends State<HomeScreen> {
       print("err...$err");
     }
   }
+
+
+
+  Future<Position> fetchCurrentLocationWithGeoLocator() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Test if location services are enabled.
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Location services are not enabled don't continue
+      // accessing the position and request users of the
+      // App to enable the location services.
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // Permissions are denied, next time you could try
+        // requesting permissions again (this is also where
+        // Android's shouldShowRequestPermissionRationale
+        // returned true. According to Android guidelines
+        // your App should show an explanatory UI now.
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Permissions are denied forever, handle appropriately.
+      return Future.error(
+          'Location permissions are permanently denied, we cannot request permissions.');
+    }
+
+    // When we reach here, permissions are granted and we can
+    // continue accessing the position of the device.
+    return await Geolocator.getCurrentPosition();
+  }
+
+  FutureM< getCurrentAddress()async{
+    Position position = await fetchCurrentLocationWithGeoLocator();
+    currentAddress = await getAddressFromLatLngWithGeoLocatorPackage(position);
+    startLocationController.text = currentAddress;
+  }
+
 
   //fetch location for updating
   Future<void> updateCurrentLocation()async{
@@ -506,9 +560,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (startLocationController.text.isNotEmpty &&
           destinationController.text.isNotEmpty) {
         List<geoLoc.Location> startPlacemark = await geoLoc.locationFromAddress(startLocationController.text);
-        print("startPlacemark...${startPlacemark}");
+        logger.i("startPlacemark..${startPlacemark}");
         List<geoLoc.Location> destinationPlacemark = await geoLoc.locationFromAddress(destinationController.text);
-        print("destinationPlacemark...${destinationPlacemark}");
+        logger.i("destinationPlacemark..${destinationPlacemark}");
 
         if (startPlacemark.isNotEmpty && destinationPlacemark.isNotEmpty) {
           originLocation = LatLng(startPlacemark[0].latitude, startPlacemark[0].longitude);
@@ -545,13 +599,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return distanceInMeters <= thresholdInMeters;
   }
 
-  Future<String> getAddressFromLatLng2(LatLng position) async {
+  Future<String> getAddressFromLatLng3(LatLng position) async {
     try {
       List<geoLoc.Placemark> placemarks = await geoLoc.placemarkFromCoordinates(position.latitude, position.longitude);
       logger.i("placemarks: $placemarks");
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
-        return "${placemark.name}, ${placemark.locality}, ${placemark.country}";
+        return "${placemark.street}, ${placemark.name}, ${placemark.locality}, ${placemark.country}";
       }
     } catch (e) {
       print("Error getting address: $e");
@@ -559,11 +613,80 @@ class _HomeScreenState extends State<HomeScreen> {
     return "Unknown location";
   }
 
+  //tungi
+  //LatLng(23.804475980154823, 90.41485726833344)
 
-  Future<String> getAddressFromLatLng(LatLng position) async {
+  ///first
+  //"lat" : 23.7220806,
+ // "lng" : 90.43066689999999
+  ///
+  ///ontap maniknagar
+  /// LatLng(23.721953954357097, 90.43057098984718)
+
+  Future<String>  getAddressFromLatLng(LatLng position) async {
+    String _host = 'https://maps.google.com/maps/api/geocode/json';
+    final url = '$_host?key=$googleApiKey&language=en&latlng=${position.latitude},${position.longitude}';
+    if(position.latitude != null && position.longitude != null){
+      var response = await http.get(Uri.parse(url));
+      logger.i("resposne..3..${response.body}");
+      if(response.statusCode == 200) {
+        Map data = jsonDecode(response.body);
+        String _formattedAddress = data["results"][0]["formatted_address"];
+        await getLatLngFromAddress(_formattedAddress);
+        print("response ==== $_formattedAddress");
+        return _formattedAddress;
+      } else return "";
+    } else return "";
+  }
+
+  Future<String>  getAddressFromLatLngWithGeoLocatorPackage(Position position) async {
+    String _host = 'https://maps.google.com/maps/api/geocode/json';
+    final url = '$_host?key=$googleApiKey&language=en&latlng=${position.latitude},${position.longitude}';
+    if(position.latitude != null && position.longitude != null){
+      var response = await http.get(Uri.parse(url));
+      logger.i("resposne..3..${response.body}");
+      if(response.statusCode == 200) {
+        Map data = jsonDecode(response.body);
+        String _formattedAddress = data["results"][0]["formatted_address"];
+        await getLatLngFromAddress(_formattedAddress);
+        print("response ==== $_formattedAddress");
+        return _formattedAddress;
+      } else return "";
+    } else return "";
+  }
+
+  Future<LatLng?> getLatLngFromAddress(String address) async {
+    final formattedAddress = Uri.encodeQueryComponent(address);
+    final url = Uri.parse(
+        "https://maps.googleapis.com/maps/api/geocode/json?address=$formattedAddress&key=$googleApiKey");
+    final response = await http.get(url);
+    print("address....$address");
+    logger.i("latlongFromAddress.....${response.body}");
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data["results"].isNotEmpty) {
+        final location = data["results"][0]["geometry"]["location"];
+        final latitude = location["lat"];
+        final longitude = location["lng"];
+        return LatLng(latitude, longitude);
+      } else {
+        print("No location found for this address.");
+        return null;
+      }
+    } else {
+      // Handle errors (e.g., invalid API key, network issues)
+      print("Error fetching location: ${response.statusCode}");
+      return null;
+    }
+  }
+
+
+
+  Future<String> getAddressFromLatLng2(LatLng position) async {
     try {
       List<geoLoc.Placemark> placemarks = await geoLoc.placemarkFromCoordinates(position.latitude, position.longitude);
-     // logger.i("placemarks: $placemarks");
+      logger.i("placemarks: $placemarks");
       if (placemarks.isNotEmpty) {
         // Function to calculate the distance between two coordinates
         double calculateDistance(double startLatitude, double startLongitude, double endLatitude, double endLongitude) {
