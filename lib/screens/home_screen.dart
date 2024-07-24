@@ -758,6 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> destinationSearchResults = [];
   String originPlaceId = "";
   String destinationPlaceId = "";
+  bool isNeedToRedraw = false;
 
   @override
   void initState() {
@@ -778,8 +779,16 @@ class _HomeScreenState extends State<HomeScreen> {
     waypoints = [];
     destination = LatLng(0, 0);
     originLocation = LatLng(0, 0);
+    isNeedToRedraw = false;
     setState(() {});
   }
+  var snackdemo = SnackBar(
+    content: Text('Procced'),
+    backgroundColor: Colors.green,
+    elevation: 10,
+    behavior: SnackBarBehavior.floating,
+    margin: EdgeInsets.all(5),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -792,6 +801,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 setState(() {
                   movingMood = "walk";
+                  isNeedToRedraw = true;
                 });
                 updateCurrentLocation();
               },
@@ -801,6 +811,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 setState(() {
                   movingMood = "drive";
+                  isNeedToRedraw = true;
                 });
                 updateCurrentLocation();
               },
@@ -871,6 +882,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 dynamic placeDetails = await fetchPlaceDetails(originPlaceId);
                                // currentPosition = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
                                 originLocation = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
+                                ScaffoldMessenger.of(context).showSnackBar(snackdemo);
                                 setState(() {
 
                                 });
@@ -933,6 +945,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                 dynamic placeDetails = await fetchPlaceDetails(destinationPlaceId);
                                 destination = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
+                                ScaffoldMessenger.of(context).showSnackBar(snackdemo);
                                 setState(() {
 
                                 });
@@ -960,7 +973,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ElevatedButton(
                         onPressed: () async {
                         //  await setRoute();
-                          final coordinateList = await fetchPolylinePointsWithGoogleApi();
+                         // final coordinateList = await fetchPolylinePointsWithGoogleApi();
+                          setState(() {
+                            isNeedToRedraw = false;
+                          });
+                          final coordinateList = await computeRoutes();
                           generatePolyLineFromPoint(coordinateList);
                           await updateCurrentLocation();
                         },
@@ -975,14 +992,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                         child: Text("end"),
                       ),
-                      SizedBox(width: 20),
-                      ElevatedButton(
-                        onPressed: () async {
-                          String address = "House no-15/16, kobillya dham residential area,Akbershah, Ferozshah, ঢাকা, Bangladesh";
-                          getLatLngFromAddress(address);
-                        },
-                        child: Text("get lat long"),
-                      ),
+                      // SizedBox(width: 20),
+                      // ElevatedButton(
+                      //   onPressed: () async {
+                      //     String address = "House no-15/16, kobillya dham residential area,Akbershah, Ferozshah, ঢাকা, Bangladesh";
+                      //     getLatLngFromAddress(address);
+                      //   },
+                      //   child: Text("get lat long"),
+                      // ),
                     ],
                   ),
                 ],
@@ -1081,6 +1098,8 @@ class _HomeScreenState extends State<HomeScreen> {
     Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high);
     currentPosition = LatLng(position.latitude, position.longitude);
+    originLocation = LatLng(position.latitude, position.longitude);
+
     print("firstTimeCurretnLocaton....${logger}");
     logger.i("firstTimeCurretnLocaton....$currentPosition");
 
@@ -1101,6 +1120,7 @@ class _HomeScreenState extends State<HomeScreen> {
         distanceFilter: 10,
       ),
     ).listen((Position position) async{
+      print("listen...");
       currentPosition = LatLng(position.latitude, position.longitude);
       setState(() {});
 
@@ -1114,12 +1134,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (isSame){
         isTwoPointSame = true;
+        isNeedToRedraw = true;
+        originLocation = LatLng(position.latitude, position.longitude);
+        //currentAddress = await getAddressFromLatLng(position);
+        //final coordinateList = await fetchPolylinePointsWithGoogleApi();
+        final coordinateList = await computeRoutes();
+        generatePolyLineFromPoint(coordinateList);
         setState(() {});
       } else {
         isTwoPointSame = false;
-        currentAddress = await getAddressFromLatLng(position);
-        final coordinateList = await fetchPolylinePointsWithGoogleApi();
-        generatePolyLineFromPoint(coordinateList);
+        if(isNeedToRedraw){
+          originLocation = LatLng(position.latitude, position.longitude);
+          final coordinateList = await computeRoutes();
+          generatePolyLineFromPoint(coordinateList);
+        }
         setState(() {});
       }
 
@@ -1134,32 +1162,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // ));
   }
 
-  Future<void> setRoute() async {
-    if (startLocationController.text.isNotEmpty &&
-        destinationController.text.isNotEmpty) {
-      print("startLocationController.text....${startLocationController.text}");
-      List<geoLoc.Location> startPlacemark = await geoLoc.locationFromAddress(startLocationController.text);
-      logger.i("startPlacemark....$startPlacemark");
-      List<geoLoc.Location> destinationPlacemark = await geoLoc.locationFromAddress(destinationController.text);
 
-      if (startPlacemark.isNotEmpty && destinationPlacemark.isNotEmpty) {
-        originLocation = LatLng(startPlacemark[0].latitude, startPlacemark[0].longitude);
-        destination = LatLng(destinationPlacemark[0].latitude, destinationPlacemark[0].longitude);
 
-        setState(() {
-          isUpdateCurrentLocation = false;
-        });
 
-        //final coordinateList = await fetchPolylinePointsWithRouteApi();
-       // final coordinateList = await fetchPolylinePointsWithGoogleApi();
-        //generatePolyLineFromPoint(coordinateList);
-      }
-    }
-  }
-
-  Future<List<LatLng>> fetchPolylinePointsWithGoogleApi() async {
+  Future<List<LatLng>> computeRoutes(/*{required LatLng start, required LatLng end}*/) async {
     final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-
     // final headers = {
     //   'Content-Type': 'application/json',
     //   'Authorization': 'Bearer $googleApiKey',
@@ -1173,25 +1180,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final body = jsonEncode({
       'origin': {
-        'placeId': originPlaceId
+        'location': {
+          'latLng': {
+            'latitude': originLocation.latitude,
+            'longitude': originLocation.longitude,
+          }
+        }
       },
       'destination': {
-        'placeId': destinationPlaceId
+        'location': {
+          'latLng': {
+            'latitude': destination.latitude,
+            'longitude': destination.longitude,
+          }
+        }
       },
       'travelMode': movingMood.toUpperCase(),
-      'languageCode': 'en-US',
-      //'routingPreference': 'TRAFFIC_AWARE',
-      //'departureTime': DateTime.now().toUtc().toIso8601String(),
-      //'computeAlternativeRoutes': false,
-      'routeModifiers': {
-        'avoidTolls': false,
-        'avoidHighways': false,
-        'avoidFerries': false,
-      },
-      //'routingPreference': 'TRAFFIC_AWARE_OPTIMAL',
+      'routingPreference': 'TRAFFIC_AWARE_OPTIMAL',
     });
-
-    print("body...${body}");
 
     try {
       final response = await http.post(
@@ -1199,8 +1205,14 @@ class _HomeScreenState extends State<HomeScreen> {
         headers: headers,
         body: body,
       );
+      logger.i("computeRoutes....${response.body}");
 
-      logger.i("with_placeid....${response.body}");
+      // if (response.statusCode == 200) {
+      //   final data = jsonDecode(response.body);
+      //   Logger().i("Routes data: $data");
+      // } else {
+      //   Logger().e("Failed to load routes: ${response.body}");
+      // }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1215,44 +1227,12 @@ class _HomeScreenState extends State<HomeScreen> {
         logger.e("Failed to load routes: ${response.body}");
       }
     } catch (e) {
-      logger.e("Error making request: $e");
+      Logger().e("Error making request: $e");
     }
-
     return [];
   }
 
 
-  Future<List<LatLng>> fetchPolylinePointsWithRouteApi() async {
-    final url = Uri.parse(
-        "https://maps.googleapis.com/maps/api/directions/json?"
-            "origin=${originLocation.latitude},${originLocation.longitude}"
-            "&destination=${destination.latitude},${destination.longitude}"
-            "&mode=$movingMood"
-            "&waypoints=${waypoints.map((wp) => "${wp.latitude},${wp.longitude}").join(',')}"
-            "&key=${googleApiKey}");
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data["status"] == "OK") {
-          final route = data["routes"][0];
-          final overviewPolyline = route["overview_polyline"]["points"];
-          final points = PolylinePoints().decodePolyline(overviewPolyline);
-
-          return points
-              .map((point) => LatLng(point.latitude, point.longitude))
-              .toList();
-        } else {
-          throw Exception("Error fetching route: ${data["status"]}");
-        }
-      } else {
-        throw Exception("Failed to fetch route");
-      }
-    } catch (e) {
-      Logger().e("Error fetching route: $e");
-      return [];
-    }
-  }
 
   void generatePolyLineFromPoint(List<LatLng> points) {
     final PolylineId polylineId = PolylineId("route");
@@ -1383,52 +1363,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
 
-  Future<void> computeRoutes({required LatLng start, required LatLng end}) async {
-    final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $googleApiKey',
-    };
 
-    final body = jsonEncode({
-      'origin': {
-        'location': {
-          'latLng': {
-            'latitude': start.latitude,
-            'longitude': start.longitude,
-          }
-        }
-      },
-      'destination': {
-        'location': {
-          'latLng': {
-            'latitude': end.latitude,
-            'longitude': end.longitude,
-          }
-        }
-      },
-      'travelMode': 'DRIVE',
-      'routingPreference': 'TRAFFIC_AWARE_OPTIMAL',
-    });
-
-    try {
-      final response = await http.post(
-        Uri.parse(url),
-        headers: headers,
-        body: body,
-      );
-      logger.i("computeRoutes....${response.body}");
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        Logger().i("Routes data: $data");
-      } else {
-        Logger().e("Failed to load routes: ${response.body}");
-      }
-    } catch (e) {
-      Logger().e("Error making request: $e");
-    }
-  }
 
   Future<dynamic> searchLocations(String query) async {
 
