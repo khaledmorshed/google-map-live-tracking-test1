@@ -49,19 +49,23 @@ class SqfLitDb{
 
   //insert data into table of database without build in function because if you create first table then you can not create table with build in onCreate function.
   static Future<int> insertDataInTableWithoutBuildINFunction({required String tableName, required String createTableInformation, required var map, String databaseName = "main_db"}) async{
-    //print("..nae.........${nameIdDbModel.id}...${nameIdDbModel.name}");
-   // createTableInfo = createTableInformation;
+    try{
+      //print("..nae.........${nameIdDbModel.id}...${nameIdDbModel.name}");
+      // createTableInfo = createTableInformation;
 
-    var databasesPath = await getDatabasesPath();
-    String path = join(databasesPath, 'main_db');
+      var databasesPath = await getDatabasesPath();
+      String path = join(databasesPath, databaseName);
 
-    // Check if the database exists
-    bool doesDatabaseExist = await databaseExists(path);
-    print("doesDatabaseExist..sec...$doesDatabaseExist......$tableName");
+      // Check if the database exists
+      bool doesDatabaseExist = await databaseExists(path);
+      print("doesDatabaseExist..sec...$doesDatabaseExist......$tableName");
 
-    final db = await _initDb(databaseName: databaseName);
-    await _createAnewTableWithoutBuildInFunction(db, createTableInformation);
-    return db.insert(tableName, map);
+      final db = await _initDb(databaseName: databaseName);
+      await _createAnewTableWithoutBuildInFunction(db, createTableInformation);
+      return db.insert(tableName, map);
+    }catch(err){
+      throw err;
+    }
   }
 
   //insert data into table of database with onCreate function which is build in. it is for creating table first time
@@ -297,18 +301,22 @@ class SqfLitDb{
 
   static Future<void> deleteDatabaseFile({String databaseName = "main_db"}) async {
     print("main...db....de");
-    final rootPath = await getDatabasesPath();
-    final dbPath = join(rootPath, databaseName);
+    try{
+      final rootPath = await getDatabasesPath();
+      final dbPath = join(rootPath, databaseName);
 
-    // Close any open database connection.
-    if (_database != null) {
-      await _database?.close();
-      _database = null;
+      // Close any open database connection.
+      if (_database != null) {
+        await _database?.close();
+        _database = null;
+      }
+
+      // Delete the database file.
+      await deleteDatabase(dbPath);
+      print("sucess.......delete....+$databaseName");
+    }catch(err){
+      throw err;
     }
-
-    // Delete the database file.
-    await deleteDatabase(dbPath);
-    print("sucess.......delete....db");
   }
 
 }

@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:google_map_live_tracking/providers/home_provider.dart';
 import 'package:google_map_live_tracking/screens/home_screen.dart';
 import 'package:google_map_live_tracking/splash_screen.dart';
 import 'package:google_map_live_tracking/utils/route/route_class.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final providerList =  [
+  ChangeNotifierProvider(create: (context) => HomeProvider()),
+  ];
+  runApp(
+    MultiProvider(
+      providers: providerList,
+      child: const MyApp(),
+    ),);
 }
 
 class MyApp extends StatelessWidget {

@@ -1,18 +1,25 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geocoding/geocoding.dart' as geoLoc;
 import 'package:geolocator/geolocator.dart';
+import 'package:google_map_live_tracking/screens/show_tracked_screen.dart';
 import 'package:google_map_live_tracking/utils/app_config.dart';
+import 'package:google_map_live_tracking/widgets/custom_widgets/custom_elevated_button.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:location/location.dart' as loc;
 
 import '../data/repositories/local/sqflite/sqf_lite_db.dart';
+import '../utils/global_classes/color_manager.dart';
+import '../utils/global_classes/debounce_class.dart';
+import '../utils/global_variable.dart';
+import '../widgets/custom_widgets/custom_text_form_field.dart';
 
 class HomeScreen extends StatefulWidget {
   static const String route = "/HomeScreen";
@@ -26,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static LatLng destination = LatLng(23.7568, 90.3901);
   static LatLng originLocation = LatLng(23.7220, 90.4214);
   final Completer<GoogleMapController> completerController = Completer();
-  
+
   LatLng? currentPosition;
   dynamic currentLatLongPosition;
   dynamic destinationLatLongPosition;
@@ -52,12 +59,148 @@ class _HomeScreenState extends State<HomeScreen> {
   String originPlaceId = "";
   String destinationPlaceId = "";
   bool isNeedToRedraw = false;
+  double _initialChildSize = 0.3;
+  double _maxChildSize = 1.0;
+  late  VoidCallback _debouncedCallDataForStartingLocation;
+  late  VoidCallback _debouncedCallDataForDestination;
+  bool isDestinationField = false;
+  final DraggableScrollableController _draggableScrollableController = DraggableScrollableController();
 
   final locationController = loc.Location();
   StreamSubscription<loc.LocationData>? locationSubscription;
+  List<LatLng> originalRoutePoints = [];
+
+
+
+  void _onTextChangedForStartingLocation(String text) {
+    // Call the debounce function to handle the delayed data call
+    _debouncedCallDataForStartingLocation();
+  }
+
+  void _callDataForStartingLocation() {
+    searchLocations(startLocationController.text);
+  }
+
+  //search for starting
+  Widget _buildSearchForStartingLocation(ScrollController controller){
+
+    return  SingleChildScrollView(
+        controller: controller,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: CustomTextFormField(
+          controller: startLocationController,
+          //labelText: "Name",
+          hintText: "Starting location",
+          fillColor: ColorManager.homeBg,
+          iconColor: ColorManager.buttonColorBlue ,
+          focusBoarderColor: ColorManager.homeBg,
+          enabledBoarderColor: ColorManager.homeBg,
+          isFilled: true,
+          isContentPadding: true,
+          contentPaddingHorizontal: 15,
+          contentPaddingVertical: 8,
+          onChanged: (value){
+            setState(() {
+              isDestinationField = false;
+            });
+            return _onTextChangedForStartingLocation(value);
+            },
+          onTap: ()async{
+            await setBottomSheetSizeAfterclickOnTextField();
+            setState(() {
+              print("ontap...start");
+              isDestinationField = false;
+              originSearchResults = [];
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _onTextChangedForDestination(String text) {
+    // Call the debounce function to handle the delayed data call
+    _debouncedCallDataForDestination();
+  }
+
+  void _callDataForDestination() {
+    searchLocations(destinationController.text);
+  }
+
+  //search for destination
+  Widget _buildSearchForDestination(ScrollController controller){
+    return  SingleChildScrollView(
+      controller: controller,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: CustomTextFormField(
+          controller: destinationController,
+          //labelText: "Name",
+          hintText: "Destination",
+          fillColor: ColorManager.homeBg,
+          iconColor: ColorManager.buttonColorBlue ,
+          focusBoarderColor: ColorManager.homeBg,
+          enabledBoarderColor: ColorManager.homeBg,
+          isFilled: true,
+          isContentPadding: true,
+          contentPaddingHorizontal: 15,
+          contentPaddingVertical: 8,
+          onChanged: (value){
+            setState(() {
+              isDestinationField = true;
+            });
+            return _onTextChangedForDestination(value);
+          },
+          onTap: ()async{
+            await setBottomSheetSizeAfterclickOnTextField();
+            setState(() {
+              print("ontap...dest");
+              isDestinationField = true;
+              originSearchResults = [];
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> setBottomSheetSizeAfterclickOnTextField()async{
+   WidgetsBinding.instance.addPostFrameCallback((_){
+     setState(() {
+       print("click....");
+       _initialChildSize = 1;
+       _maxChildSize = 1;
+     });
+   });
+  }
+
 
   @override
   void initState() {
+    _debouncedCallDataForStartingLocation = DebounceClass.debounce(_callDataForStartingLocation, const Duration(milliseconds: 300));
+    _debouncedCallDataForDestination = DebounceClass.debounce(_callDataForDestination, const Duration(milliseconds: 300));
+   // _draggableScrollableController.addListener(_handleScrolling);
+    _draggableScrollableController.addListener(() {
+      // print("scroll......${_draggableScrollableController.size}");
+      // if (_draggableScrollableController.size > 0.3) {
+      //   WidgetsBinding.instance.addPostFrameCallback((_) {
+      //     setState(() {
+      //       _initialChildSize = 1.0;
+      //     });
+      //   });
+      //
+      // } else if(_draggableScrollableController.size  == 0.3){
+      //   WidgetsBinding.instance.addPostFrameCallback((_) {
+      //     setState(() {
+      //       _initialChildSize = 0.3;
+      //     });
+      //   });
+      //
+      // }
+     /// FocusScope.of(context).unfocus();
+    });
+    //
     WidgetsBinding.instance.addPostFrameCallback((_) {
       initialize();
     });
@@ -66,7 +209,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> initialize() async {
     await clearData();
+    await _deleteDatabase();
     await setCustomMarkerIcon();
+   // _showBottomModalWithoutDateButton();
     await fetchingOnlyCurrentAddress();
   }
 
@@ -76,6 +221,12 @@ class _HomeScreenState extends State<HomeScreen> {
     destination = LatLng(0, 0);
     originLocation = LatLng(0, 0);
     isNeedToRedraw = false;
+    originalRoutePoints = [];
+    _initialChildSize = 0.3;
+    _maxChildSize = 1.0;
+    isDestinationField = false;
+    startLocationController.clear();
+    destinationController.clear();
     setState(() {});
   }
   var snackdemo = SnackBar(
@@ -86,263 +237,219 @@ class _HomeScreenState extends State<HomeScreen> {
     margin: EdgeInsets.all(5),
   );
 
+
+
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Colors.blue,
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  movingMood = "walk";
-                  isNeedToRedraw = true;
-                });
-                //updateCurrentLocation();
-                updateCurrentLocationWithLocationPackage();
-              },
-              child: Text("walking"),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  movingMood = "drive";
-                  isNeedToRedraw = true;
-                });
-                //updateCurrentLocation();
-                updateCurrentLocationWithLocationPackage();
-              },
-              child: Text("driving"),
-            ),
-            TextButton(
-              onPressed: () async {
-                await updateCurrentLocationWithLocationPackage();
-              },
-              child: Text("my_loca"),
-            ),
-
-            if(isTwoPointSame) TextButton(
-              onPressed: () async {
-              },
-              child: Text("two same"),
-            ),
-
-          ],
-        ),
-        body: currentPosition == null
-            ? Center(child: CircularProgressIndicator())
-            : Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: startLocationController,
-                    //decoration: InputDecoration(hintText: "Start Location"),
-                    decoration: InputDecoration(
-                      hintText: "Search Starting Location",
-                      suffixIcon: IconButton(
-                        icon: Icon(Icons.search),
-                        onPressed: () async{
-                          originSearchResults = await  searchLocations(startLocationController.text);
-                          setState(() {
-
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  Container(
-                    color: Colors.grey,
-                    height: 100,
-                    width: double.infinity,
-                    child:  Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ListView.builder(
-                        itemCount: originSearchResults.length,
-                        itemBuilder: (context, index) {
-                          final result = originSearchResults[index]["description"];
-                          //final result = searchResults[index]["description"];
-                          return
-                            //Text(result.toString());
-                            ListTile(
-                              title: Text(result.toString()),
-                              onTap: () async{
-                                // Navigate to the location on the map
-                                print("originPlaceId....1");
-                                setState(() {
-                               //   destinationLatLongPosition = LatLng(result.latitude, result.longitude);
-                                  originPlaceId = originSearchResults[index]["place_id"];
-                                  print("originPlaceId....$originPlaceId");
-                                });
-                                dynamic placeDetails = await fetchPlaceDetails(originPlaceId);
-                               // currentPosition = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
-                                originLocation = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
-                                ScaffoldMessenger.of(context).showSnackBar(snackdemo);
-                                setState(() {
-
-                                });
-                                // completerController.future.then((controller) {
-                                //   controller.animateCamera(
-                                //     CameraUpdate.newCameraPosition(
-                                //       CameraPosition(
-                                //         target: LatLng(result.latitude, result.longitude),
-                                //         zoom: 14.0,
-                                //       ),
-                                //     ),
-                                //   );
-                                // });
-
-                              },
-                            );
-                        },
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  TextField(
-                    controller: destinationController,
-                    decoration: InputDecoration(
-                      hintText: "Search Destination Location",
-                      suffixIcon: IconButton(
-                        icon: Icon(Icons.search),
-                        onPressed: () async{
-                          destinationSearchResults = await searchLocations(destinationController.text);
-                          setState(() {
-
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Container(
-                    color: Colors.grey,
-                    height: 100,
-                    width: double.infinity,
-                    child:  Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ListView.builder(
-                        itemCount: destinationSearchResults.length,
-                        itemBuilder: (context, index) {
-                          final result = destinationSearchResults[index]["description"];
-                          //final result = searchResults[index]["description"];
-                          return
-                            //Text(result.toString());
-                            ListTile(
-                              title: Text(result.toString()),
-                              onTap: () async{
-                                // Navigate to the location on the map
-                                setState(() {
-                                  //destinationLatLongPosition = LatLng(result.latitude, result.longitude);
-                                  destinationPlaceId = destinationSearchResults[index]["place_id"];
-                                  print("destinationPlaceId....${destinationPlaceId}");
-                                });
-
-                                dynamic placeDetails = await fetchPlaceDetails(destinationPlaceId);
-                                destination = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
-                                ScaffoldMessenger.of(context).showSnackBar(snackdemo);
-                                final coordinateList = await computeRoutes();
-                                generatePolyLineFromPoint(coordinateList);
-                                setState(() {
-
-                                });
-
-                                // completerController.future.then((controller) {
-                                //   controller.animateCamera(
-                                //     CameraUpdate.newCameraPosition(
-                                //       CameraPosition(
-                                //         target: LatLng(result.latitude, result.longitude),
-                                //         zoom: 14.0,
-                                //       ),
-                                //     ),
-                                //   );
-                                // });
-
-                              },
-                            );
-                        },
-                      ),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: ColorManager.homeBg,
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pushNamed(context, ShowTrackedScreen.route);
+            },
+            child: Text("show route"),
+          ),
+          // TextButton(
+          //   onPressed: () async{
+          //     setState(() {
+          //       movingMood = "walk";
+          //       isNeedToRedraw = true;
+          //     });
+          //     //updateCurrentLocation();
+          //     //await _deleteDatabase();
+          //    // updateCurrentLocationWithLocationPackage();
+          //   },
+          //   child: Text("walking"),
+          // ),
+          // TextButton(
+          //   onPressed: () async{
+          //     setState(() {
+          //       movingMood = "drive";
+          //       isNeedToRedraw = true;
+          //     });
+          //     //updateCurrentLocation();
+          //   //  await _deleteDatabase();
+          //     //updateCurrentLocationWithLocationPackage();
+          //   },
+          //   child: Text("driving"),
+          // ),
+          TextButton(
+            onPressed: () async {
+              await cancelTracking();
+              await clearData();
+              fetchCurrentLocationWithLocationPackage();
+            },
+            child: Text("end"),
+          ),
+    
+          // if(isTwoPointSame) TextButton(
+          //   onPressed: () async {
+          //   },
+          //   child: Text("two same"),
+          // ),
+    
+        ],
+      ),
+      body: currentPosition == null
+          ? SafeArea(child: Center(child: CircularProgressIndicator()))
+          : SafeArea(
+            child: Stack(
                     children: [
-                      ElevatedButton(
-                        onPressed: () async {
-                        //  await setRoute();
-                         // final coordinateList = await fetchPolylinePointsWithGoogleApi();
-                          setState(() {
-                            isNeedToRedraw = false;
-                          });
-                          final coordinateList = await computeRoutes();
-                          generatePolyLineFromPoint(coordinateList);
-                          //await updateCurrentLocation();
-                          await updateCurrentLocationWithLocationPackage();
-                        },
-                        child: Text("start"),
+            GoogleMap(
+              myLocationEnabled: true,
+              initialCameraPosition: CameraPosition(
+                target: currentPosition!,
+                zoom: 13,
+              ),
+              markers: {
+                Marker(
+                  markerId: const MarkerId("currentLocation"),
+                  icon: currentIcon,
+                  position: currentPosition!,
+                ),
+                /*if(!isTwoPointSame)*/Marker(
+                  markerId: MarkerId("sourceLocation"),
+                  icon: originIcon,
+                  position: originLocation,
+                ),
+                Marker(
+                  markerId: MarkerId("destinationLocation"),
+                  icon: destinationIcon,
+                  position: destination,
+                ),
+              },
+              polylines: Set<Polyline>.of(polyLinesMap.values),
+              onTap: (LatLng tappedPoint) {
+                setState(() {
+                  waypoints.add(PointLatLng(tappedPoint.latitude, tappedPoint.longitude));
+                });
+              },
+              onMapCreated: (mapController) {
+                completerController.complete(mapController);
+              },
+            ),
+            DraggableScrollableSheet(
+              controller: _draggableScrollableController,
+              initialChildSize: _initialChildSize,
+              minChildSize: 0.3,
+              maxChildSize: _maxChildSize,
+              builder: (BuildContext context, ScrollController scrollController) {
+               // print("build....${scrollController.initialScrollOffset}");
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(10.0)),
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(height: 10,),
+                      _buildSearchForStartingLocation(scrollController),
+                      _buildSearchForDestination(scrollController),
+                      SizedBox(height: 10,),
+                      if(_maxChildSize == 1 && _initialChildSize == 1) Padding(
+                        padding: const EdgeInsets.only(left: 10.0, right: 10),
+                        child: Container(
+                          color: Colors.black12,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Row(
+                              children: [
+                                Text("Set On Map"),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      SizedBox(width: 30),
-                      ElevatedButton(
-                        onPressed: () async {
-                          await cancelTracking();
-                          await clearData();
-                        },
-                        child: Text("end"),
+                      if(_maxChildSize == 1 && _initialChildSize == 1)SizedBox(height: 10,),
+                      if(_maxChildSize == 1 && _initialChildSize == 1)Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: originSearchResults.length,
+                          itemBuilder: (context, index) {
+                            final result = originSearchResults[index]["description"];
+                            return ListTile(
+                              title: Text(result.toString(), style: TextStyle(fontSize: 14),),
+                              onTap: () async{
+                                if(isDestinationField){
+                                  setState(() {
+                                    destinationPlaceId = originSearchResults[index]["place_id"];
+                                  });
+                                  dynamic placeDetails = await fetchPlaceDetails(destinationPlaceId);
+                                  destination = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
+                                  destinationController.text = result.toString();
+                                  _initialChildSize = 0.3;
+                                  _maxChildSize = 0.3;
+                                  FocusScope.of(context).unfocus();
+                                  final coordinateList = await computeRoutes();
+                                  generatePolyLineFromPoint(coordinateList);
+                                  completerController.future.then((controller) {
+                                    controller.animateCamera(
+                                      CameraUpdate.newCameraPosition(
+                                        CameraPosition(
+                                          target: LatLng(currentPosition!.latitude, currentPosition!.longitude),
+                                          zoom: 14.0,
+                                        ),
+                                      ),
+                                    );
+                                  });
+                                  setState(() {
+                                  });
+                                }else{
+                                  startLocationController.text = result.toString();
+                                  setState(() {
+                                    originPlaceId = originSearchResults[index]["place_id"];
+                                  });
+                                  dynamic placeDetails = await fetchPlaceDetails(originPlaceId);
+                                  originLocation = LatLng(placeDetails["geometry"]["location"]["lat"], placeDetails["geometry"]["location"]["lng"]);
+                                  setState(() {
+                                  });
+                                }
+                              },
+                            );
+                          },
+                        ),
                       ),
-                      // SizedBox(width: 20),
-                      // ElevatedButton(
-                      //   onPressed: () async {
-                      //     String address = "House no-15/16, kobillya dham residential area,Akbershah, Ferozshah, ঢাকা, Bangladesh";
-                      //     getLatLngFromAddress(address);
-                      //   },
-                      //   child: Text("get lat long"),
-                      // ),
+                      if(destinationController.text.isNotEmpty)Padding(
+                        padding: const EdgeInsets.only(left: 15.0, right: 15.0, bottom: 10, top: 10),
+                        child: CustomElevatedButton(
+                          buttonWidth: double.infinity,
+                          onPressed: ()async{
+                            //  await setRoute();
+                            // final coordinateList = await fetchPolylinePointsWithGoogleApi();
+                            await cancelTracking();
+                            await _deleteDatabase();
+                            setState(() {
+                              isNeedToRedraw = false;
+                            });
+                            final coordinateList = await computeRoutes();
+                            await generatePolyLineFromPoint(coordinateList);
+                            //await updateCurrentLocation();
+                            completerController.future.then((controller) {
+                              controller.animateCamera(
+                                CameraUpdate.newCameraPosition(
+                                  CameraPosition(
+                                    target: LatLng(currentPosition!.latitude, currentPosition!.longitude),
+                                    zoom: 14.0,
+                                  ),
+                                ),
+                              );
+                            });
+                            await updateCurrentLocationWithLocationPackage();
+                            },
+                          text: "Start",
+                          textColor: Colors.white,
+                        ),
+                      ),
                     ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
-            Expanded(
-              child: GoogleMap(
-                myLocationEnabled: true,
-                initialCameraPosition: CameraPosition(
-                  target: currentPosition!,
-                  zoom: 13,
-                ),
-                markers: {
-                  Marker(
-                    markerId: const MarkerId("currentLocation"),
-                    icon: currentIcon,
-                    position: currentPosition!,
+                    ],
                   ),
-                  if(!isTwoPointSame)Marker(
-                    markerId: MarkerId("sourceLocation"),
-                    icon: originIcon,
-                    position: originLocation,
-                  ),
-                  Marker(
-                    markerId: MarkerId("destinationLocation"),
-                    icon: destinationIcon,
-                    position: destination,
-                  ),
-                },
-                polylines: Set<Polyline>.of(polyLinesMap.values),
-                onTap: (LatLng tappedPoint) {
-                  setState(() {
-                    waypoints.add(PointLatLng(tappedPoint.latitude, tappedPoint.longitude));
-                  });
-                },
-                onMapCreated: (mapController) {
-                  completerController.complete(mapController);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -375,14 +482,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
 
-  
+
 
   // fetch location for updating
   Future<loc.LocationData> fetchCurrentLocationWithLocationPackage()async{
     try{
       bool serviceEnable;
       loc.PermissionStatus permissionStatus;
-
       //to check service enable status
       serviceEnable = await locationController.serviceEnabled();
       if(serviceEnable){
@@ -403,6 +509,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final locationData = await locationController.getLocation();
       currentPosition = LatLng(locationData.latitude!, locationData.longitude!);
       originLocation = LatLng(locationData.latitude!, locationData.longitude!);
+      currentAddress = await getAddressFromLatLng(locationData);
+      startLocationController.text = currentAddress;
       setState(() {
 
       });
@@ -422,32 +530,45 @@ class _HomeScreenState extends State<HomeScreen> {
       locationSubscription = await locationController.onLocationChanged.listen((location)async{
         currentPosition = LatLng(location.latitude!, location.longitude!);
         setState(() {});
+       // await storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+        Timer(const Duration(seconds: 10), (){
+          storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+        });
 
-        bool isSame = areLocationsClose(
-          currentLocation: currentPosition!,
-          originOrDestinationLocation: originLocation,
-          thresholdInMeters: 30,
-        );
+        // bool isSame = areLocationsClose(
+        //   currentLocation: currentPosition!,
+        //   originOrDestinationLocation: originLocation,
+        //   thresholdInMeters: 30,
+        // );
 
-        print("isSame....$isSame");
+        //print("isSame....$isSame");
 
-        if (isSame){
-          isTwoPointSame = true;
+        // if (isSame){
+        //   isTwoPointSame = true;
+        //   isNeedToRedraw = true;
+        //   originLocation = LatLng(location.latitude!, location.longitude!);
+        //   //currentAddress = await getAddressFromLatLng(position);
+        //   //final coordinateList = await fetchPolylinePointsWithGoogleApi();
+        //   final coordinateList = await computeRoutes();
+        //   generatePolyLineFromPoint(coordinateList);
+        //   setState(() {});
+        // } else {
+        //   isTwoPointSame = false;
+        //   if(isNeedToRedraw){
+        //     originLocation = LatLng(location.latitude!, location.longitude!);
+        //     final coordinateList = await computeRoutes();
+        //     generatePolyLineFromPoint(coordinateList);
+        //   }
+        //   setState(() {});
+        // }
+
+        // Check if the user has deviated from the original route
+        if (await hasDeviatedFromRoute(currentPosition!, originalRoutePoints, threshold: 20)) {
+          print("hasDeviatedFromRoute.....1");
           isNeedToRedraw = true;
-          originLocation = LatLng(location.latitude!, location.longitude!);
-          //currentAddress = await getAddressFromLatLng(position);
-          //final coordinateList = await fetchPolylinePointsWithGoogleApi();
-          final coordinateList = await computeRoutes();
-          generatePolyLineFromPoint(coordinateList);
-          setState(() {});
-        } else {
-          isTwoPointSame = false;
-          if(isNeedToRedraw){
-            originLocation = LatLng(location.latitude!, location.longitude!);
-            final coordinateList = await computeRoutes();
-            generatePolyLineFromPoint(coordinateList);
-          }
-          setState(() {});
+          final newRoutePoints = await computeRoutes();
+          generatePolyLineFromPoint(newRoutePoints);
+          isNeedToRedraw = false;
         }
 
         //LatLng(23.7221459, 90.4305929)
@@ -479,7 +600,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final headers = {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': googleApiKey,
-      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+      //'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+      'X-Goog-FieldMask': '*',
     };
 
     final body = jsonEncode({
@@ -525,7 +647,13 @@ class _HomeScreenState extends State<HomeScreen> {
         if (routes.isNotEmpty) {
           final points = routes[0]['polyline']['encodedPolyline'] as String;
           final coordinates = PolylinePoints().decodePolyline(points);
-          return coordinates.map((point) => LatLng(point.latitude, point.longitude)).toList();
+          // ///TODO REMOVE
+          //  await _deleteDatabase();
+          // coordinates.map((points)async{
+          //    await storeDataInSqflite(latitude: points.latitude, longitude: points.longitude);
+          // }).toList();
+          originalRoutePoints = coordinates.map((point) => LatLng(point.latitude, point.longitude)).toList();
+          return originalRoutePoints;
         }
       } else {
         logger.e("Failed to load routes: ${response.body}");
@@ -538,7 +666,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
 
-  void generatePolyLineFromPoint(List<LatLng> points) {
+  Future<void> generatePolyLineFromPoint(List<LatLng> points) async{
     final PolylineId polylineId = PolylineId("route");
     final Polyline polyline = Polyline(
       polylineId: polylineId,
@@ -637,7 +765,7 @@ class _HomeScreenState extends State<HomeScreen> {
       originOrDestinationLocation.latitude,
       originOrDestinationLocation.longitude,
     );
-    print("distance....$distance");
+    //print("distance....$distance");
     return distance < thresholdInMeters;
   }
 
@@ -671,6 +799,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final predictions = data['predictions'] as List;
+        originSearchResults = predictions;
+        setState(() {
+
+        });
         return predictions;
         // searchResults = predictions;
         //print("searchResults...${searchResults[0]}");
@@ -709,6 +841,47 @@ class _HomeScreenState extends State<HomeScreen> {
       rethrow;
     }
   }
+
+  Future<bool> hasDeviatedFromRoute(LatLng currentPosition, List<LatLng> routePoints, {double threshold = 30.0}) async{
+    double minDistance = 10000000000013;
+    double distance = 0;
+    print("threshold..$threshold");
+    for (LatLng point in routePoints) {
+      distance = Geolocator.distanceBetween(
+        currentPosition.latitude,
+        currentPosition.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      print("distance....$distance");
+      minDistance = min(distance, minDistance);
+    }
+    print("deviated_distance....$distance");
+    print("mindistance....$minDistance");
+    if (minDistance < threshold) {
+      return false;
+    }
+    return true;
+  }
+
+
+  Future<void> _deleteDatabase()async{
+    await SqfLitDb.deleteDatabaseFile(databaseName: databaseName);
+  }
+
+  Future<void> deleteTable()async{
+    await SqfLitDb.deleteAnyTableDataFromLocalDb(tableName: tableName);
+  }
+
+  storeDataInSqflite({double latitude = 0, double longitude = 0})async{
+    var map = {
+      "latitude": "$latitude",
+      "longitude": "$longitude",
+    };
+    String tableInfo =  "CREATE TABLE IF NOT EXISTS $tableName (id INTEGER PRIMARY KEY AUTOINCREMENT, latitude TEXT, longitude TEXT)";
+    await SqfLitDb.createDatabaseAndInsertDataInTable(tableName: tableName, createTableInformation: tableInfo, map: map, databaseName: databaseName);
+  }
+
 
 }
 
