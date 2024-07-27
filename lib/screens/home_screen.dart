@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geocoding/geocoding.dart' as geoLoc;
 import 'package:geolocator/geolocator.dart';
@@ -14,12 +18,245 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:location/location.dart' as loc;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/repositories/local/sqflite/sqf_lite_db.dart';
+import '../utils/global_classes/call_class.dart';
 import '../utils/global_classes/color_manager.dart';
 import '../utils/global_classes/debounce_class.dart';
 import '../utils/global_variable.dart';
 import '../widgets/custom_widgets/custom_text_form_field.dart';
+
+// fetch location for updating
+Future<loc.LocationData> fetchCurrentLocationWithLocationPackageForBackground() async {
+  try {
+    bool serviceEnabled;
+    loc.PermissionStatus permissionStatus;
+    final locationController = loc.Location();
+
+    // Check if location service is enabled
+    serviceEnabled = await locationController.serviceEnabled();
+    if (serviceEnabled) {
+
+      // Request to enable location service
+      serviceEnabled = await locationController.requestService();
+      if (!serviceEnabled) {
+        return Future.error('Location services are disabled.');
+      }
+    }
+
+    // Check the permission status
+    permissionStatus = await locationController.hasPermission();
+    if (permissionStatus == loc.PermissionStatus.denied) {
+      // Request location permission
+      permissionStatus = await locationController.requestPermission();
+      if (permissionStatus != loc.PermissionStatus.granted) {
+        return Future.error('Location permissions are denied.');
+      }
+    }
+
+    // Get the current location
+    return await locationController.getLocation();
+  } catch (err) {
+    print("Error: $err");
+    return Future.error(err);
+  }
+}
+
+// this will be used as notification channel id
+const notificationChannelId = 'my_foreground';
+
+// this will be used for notification id, So you can update your custom notification with this id.
+const notificationId = 888;
+
+Future<void> initializeService() async {
+  final service = FlutterBackgroundService();
+
+  /// OPTIONAL, using custom notification channel id
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'my_foreground', // id
+    'MY FOREGROUND SERVICE', // title
+    description:
+    'This channel is used for important notifications.', // description
+    importance: Importance.low, // importance must be at low or higher level
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
+
+  if (Platform.isIOS || Platform.isAndroid) {
+    await flutterLocalNotificationsPlugin.initialize(
+      const InitializationSettings(
+        iOS: DarwinInitializationSettings(),
+        android: AndroidInitializationSettings('ic_bg_service_small'),
+      ),
+    );
+  }
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      // this will be executed when app is in foreground or background in separated isolate
+      onStart: onStart,
+
+      // auto start service
+      autoStart: true,
+      isForegroundMode: true,
+
+      notificationChannelId: 'my_foreground',
+      initialNotificationTitle: 'AWESOME SERVICE',
+      initialNotificationContent: 'Initializing',
+      foregroundServiceNotificationId: 888,
+    ),
+    iosConfiguration: IosConfiguration(
+      // auto start service
+      autoStart: true,
+
+      // this will be executed when app is in foreground in separated isolate
+      onForeground: onStart,
+
+      // you have to enable background fetch capability on xcode project
+      onBackground: onIosBackground,
+    ),
+  );
+}
+
+// to ensure this is executed
+// run app from xcode, then from xcode menu, select Simulate Background Fetch
+
+@pragma('vm:entry-point')
+Future<bool> onIosBackground(ServiceInstance service) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  DartPluginRegistrant.ensureInitialized();
+
+  SharedPreferences preferences = await SharedPreferences.getInstance();
+  await preferences.reload();
+  final log = preferences.getStringList('log') ?? <String>[];
+  log.add(DateTime.now().toIso8601String());
+  await preferences.setStringList('log', log);
+
+  return true;
+}
+
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  print("test...1");
+  // Only available for flutter 3.0.0 and later
+  DartPluginRegistrant.ensureInitialized();
+  print("test...2");
+
+  // For flutter prior to version 3.0.0
+  // We have to register the plugin manually
+
+  SharedPreferences preferences = await SharedPreferences.getInstance();
+  print("test...3");
+  await preferences.setString("hello", "world");
+  print("test...4");
+
+  /// OPTIONAL when use custom notification
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
+  print("test...5");
+
+  if (service is AndroidServiceInstance) {
+    print("test...6");
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+    print("test...7");
+
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+    print("test...8");
+  }
+
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+  print("test...9");
+
+  // bring to foreground
+  Timer.periodic(const Duration(seconds: 5), (timer) async {
+    if (service is AndroidServiceInstance) {
+      if (await service.isForegroundService()) {
+        /// OPTIONAL for use custom notification
+        /// the notification id must be equals with AndroidConfiguration when you call configure() method.
+        print("test...11");
+        flutterLocalNotificationsPlugin.show(
+          888,
+          'COOL SERVICE',
+          'Awesome ${DateTime.now()}',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'my_foreground',
+              'MY FOREGROUND SERVICE',
+              icon: 'ic_bg_service_small',
+              ongoing: true,
+            ),
+          ),
+        );
+
+        // // if you don't using custom notification, uncomment this
+        // service.setForegroundNotificationInfo(
+        //   title: "My App Service",
+        //   content: "Updated at ${DateTime.now()}",
+        // );
+        dynamic locationData;
+        try{
+          print("test...12");
+          if(CallClass.isNowCall)locationData = await fetchCurrentLocationWithLocationPackageForBackground();
+          print("latalongdta....${locationData}");
+          service.setForegroundNotificationInfo(
+            title: "My App Service",
+            content: "lat=${locationData.latitude}, long=${locationData.longitude}",
+          );
+
+        }catch(err){
+          print("backError...$err");
+
+          service.setForegroundNotificationInfo(
+            title: "My App Service",
+            content: "Error: ${DateTime.now()}",
+          );
+
+          // service.setForegroundNotificationInfo(
+          //   title: "My App Service",
+          //   content: "lat=${locationData.latitude}, long=${locationData.longitude}",
+          // );
+
+        }
+      }
+    }
+
+    /// you can see this log in logcat
+    print('FLUTTER BACKGROUND SERVICE: ${DateTime.now()}');
+
+    // test using external plugin
+    final deviceInfo = DeviceInfoPlugin();
+    String? device;
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      device = androidInfo.model;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      device = iosInfo.model;
+    }
+
+    service.invoke(
+      'update',
+      {
+        "current_date": DateTime.now().toIso8601String(),
+        "device": device,
+      },
+    );
+  });
+}
+//end for background
 
 class HomeScreen extends StatefulWidget {
   static const String route = "/HomeScreen";
@@ -47,6 +284,9 @@ class _HomeScreenState extends State<HomeScreen> {
   BitmapDescriptor currentIcon = BitmapDescriptor.defaultMarker;
   bool isUpdateCurrentLocation = false;
   bool isTwoPointSame = false;
+  Map<MarkerId, Marker> markers = {};
+  bool isConfirmOrigin = false;
+  bool isConfirmDestination = false;
 
   final startLocationController = TextEditingController();
   final destinationController = TextEditingController();
@@ -213,6 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await setCustomMarkerIcon();
    // _showBottomModalWithoutDateButton();
     await fetchingOnlyCurrentAddress();
+   // await initializeService();
   }
 
   Future<void> clearData() async {
@@ -227,6 +468,8 @@ class _HomeScreenState extends State<HomeScreen> {
     isDestinationField = false;
     startLocationController.clear();
     destinationController.clear();
+    isConfirmOrigin = false;
+    isConfirmDestination = false;
     setState(() {});
   }
   var snackdemo = SnackBar(
@@ -236,6 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
     behavior: SnackBarBehavior.floating,
     margin: EdgeInsets.all(5),
   );
+
 
 
 
@@ -324,6 +568,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: (LatLng tappedPoint) {
                 setState(() {
                   waypoints.add(PointLatLng(tappedPoint.latitude, tappedPoint.longitude));
+                  _addMarker(tappedPoint);
                 });
               },
               onMapCreated: (mapController) {
@@ -354,10 +599,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.black12,
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
-                            child: Row(
-                              children: [
-                                Text("Set On Map"),
-                              ],
+                            child: GestureDetector(
+                              onTap: (){
+                                FocusScope.of(context).unfocus();
+                                setState(() {
+                                  _initialChildSize = 0.3;
+                                });
+                              },
+                              child: Row(
+                                children: [
+                                  Text("Set On Map"),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -475,6 +728,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> fetchingOnlyCurrentAddress()async{
     //Position position = await fetchCurrentLocationWithGeoCoding();
     loc.LocationData position = await fetchCurrentLocationWithLocationPackage();
+    CallClass.isNowCall = true;
     currentAddress = await getAddressFromLatLng(position);
     setState(() {
       //startLocationController.text = currentAddress;
@@ -522,6 +776,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return Future.error('Location permissions are denied');
   }
+
 
   Future<void> updateCurrentLocationWithLocationPackage()async{
     try{
@@ -788,8 +1043,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   Future<dynamic> searchLocations(String query) async {
-
-    final url = 'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$query&key=$googleApiKey';
+    String country = "BD";
+    final url = 'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$query&key=$googleApiKey&components=country:$country';
    // final url = 'https://maps.googleapis.com/maps/api/place/queryautocomplete/json?input=$query&key=$googleApiKey';
     print("searchUrl....$url");
 
@@ -882,6 +1137,40 @@ class _HomeScreenState extends State<HomeScreen> {
     await SqfLitDb.createDatabaseAndInsertDataInTable(tableName: tableName, createTableInformation: tableInfo, map: map, databaseName: databaseName);
   }
 
+  void _addMarker(LatLng tappedPoint)async {
+    final markerId = MarkerId(tappedPoint.toString());
+    final marker = Marker(
+      markerId: markerId,
+      position: tappedPoint,
+      infoWindow: InfoWindow(title: "Selected Location"),
+    );
+
+    loc.LocationData value = convertLatLngToLocationData(tappedPoint);
+    print("tappedTest....${value}");
+    print("tappedTest....${value.latitude}");
+
+    markers[markerId] = marker;
+    if(isDestinationField) {
+      destination = tappedPoint;
+      loc.LocationData value = convertLatLngToLocationData(destination);
+      destinationController.text = await getAddressFromLatLng(value);
+    }
+    else {
+      originLocation = tappedPoint;
+      loc.LocationData value = convertLatLngToLocationData(originLocation);
+      startLocationController.text = await getAddressFromLatLng(value);
+    }
+
+    setState(() {
+    });
+  }
+
+  loc.LocationData convertLatLngToLocationData(LatLng latLng) {
+    return loc.LocationData.fromMap({
+      'latitude': latLng.latitude,
+      'longitude': latLng.longitude,
+    });
+  }
 
 }
 

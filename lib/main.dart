@@ -1,13 +1,25 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_map_live_tracking/providers/home_provider.dart';
 import 'package:google_map_live_tracking/screens/home_screen.dart';
 import 'package:google_map_live_tracking/splash_screen.dart';
 import 'package:google_map_live_tracking/utils/route/route_class.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+
+
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();;
+  await initializeService();
+
   final providerList =  [
   ChangeNotifierProvider(create: (context) => HomeProvider()),
   ];
@@ -34,5 +46,8 @@ class MyApp extends StatelessWidget {
       onGenerateRoute: (route)=> RouteClass.onGenerateRoute(route),
     );
   }
+
+
 }
+
 
