@@ -117,7 +117,7 @@ Future<void> initializeService() async {
       autoStart: true,
 
       // this will be executed when app is in foreground in separated isolate
-      onForeground: onStart,
+   //   onForeground: onStart,
 
       // you have to enable background fetch capability on xcode project
       onBackground: onIosBackground,
@@ -272,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final Completer<GoogleMapController> completerController = Completer();
 
   LatLng? currentPosition;
-  dynamic currentLatLongPosition;
+
   dynamic destinationLatLongPosition;
   Map<PolylineId, Polyline> polyLinesMap = {};
   List<PointLatLng> waypoints = [];
@@ -785,10 +785,10 @@ class _HomeScreenState extends State<HomeScreen> {
       locationSubscription = await locationController.onLocationChanged.listen((location)async{
         currentPosition = LatLng(location.latitude!, location.longitude!);
         setState(() {});
-       // await storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
-        Timer(const Duration(seconds: 10), (){
-          storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
-        });
+        await storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+       //  Timer(const Duration(seconds: 10), (){
+       //    storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+       //  });
 
         // bool isSame = areLocationsClose(
         //   currentLocation: currentPosition!,
@@ -953,9 +953,15 @@ class _HomeScreenState extends State<HomeScreen> {
   //   return "Unknown location";
   // }
 
-    Future<String>  getAddressFromLatLng(/*Position*/ loc.LocationData position) async {
+    Future<String>  getAddressFromLatLng3(/*Position*/ loc.LocationData position) async {
+
     String _host = 'https://maps.google.com/maps/api/geocode/json';
     final url = '$_host?key=$googleApiKey&language=en&latlng=${position.latitude},${position.longitude}';
+
+      // String _host = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+      // final url = '$_host?location=${position.latitude},${position.longitude}&radius=50&key=$googleApiKey';
+
+
     print("address+url.....$url");
     if(position.latitude != null && position.longitude != null){
       var response = await http.get(Uri.parse(url));
@@ -966,11 +972,55 @@ class _HomeScreenState extends State<HomeScreen> {
       if(response.statusCode == 200) {
         Map data = jsonDecode(response.body);
         String _formattedAddress = data["results"][0]["formatted_address"];
-        currentLatLongPosition = data["results"][0]["geometry"]["location"];
-        originPlaceId = data["results"][0]["place_id"].toString();
 
-        print("currentLatLongPostion.....${currentLatLongPosition}");
-        await getLatLngFromAddress(_formattedAddress);
+       // originPlaceId = data["results"][0]["place_id"].toString();
+
+
+      //  await getLatLngFromAddress(_formattedAddress);
+        print("response ==== $_formattedAddress");
+        return _formattedAddress;
+      } else return "";
+    } else return "";
+  }
+
+
+  Future<String> getAddressFromLatLng(/*Position*/ loc.LocationData position) async {
+    // String _host = 'https://maps.google.com/maps/api/geocode/json';
+    // final url = '$_host?key=$googleApiKey&language=en&latlng=${position.latitude},${position.longitude}';
+    String _host = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+    final url = '$_host?location=${position.latitude},${position.longitude}&radius=50&key=$googleApiKey';
+    print("address+url.....$url");
+    if(position.latitude != null && position.longitude != null){
+      var response = await http.get(Uri.parse(url));
+      logger.i("getAddressFromLatLng..${response.body}");
+      //firstTimeCurretnLocaton....LatLng(23.722151, 90.4306274)
+      //getAddressFromLatLng....LatLng(23.7220806,  90.43066689999999)
+      //getLatLngFromAddress....LatLng(23.804093,  90.4152376)
+      if(response.statusCode == 200) {
+        Map data = jsonDecode(response.body);
+        String _formattedAddress = data["results"][0]["name"];
+       // currentLatLongPosition = data["results"][0]["geometry"]["location"];
+       // originPlaceId = data["results"][0]["place_id"].toString();
+        double minDistance = 1000000000;
+
+        for(var locationData in data["results"]){
+          LatLng secondLocation = LatLng(
+            locationData["geometry"]["location"]["lat"],
+            locationData["geometry"]["location"]["lng"],
+          );
+          double distance = getDistance(firstLocation: LatLng(position.latitude!, position.longitude!), secondLocation: secondLocation);
+         // print("distance....$distance....minDistance...$minDistance");
+          if(distance < minDistance){
+            minDistance = distance;
+            _formattedAddress = locationData["name"];
+          }
+        }
+
+
+
+
+
+        //  await getLatLngFromAddress(_formattedAddress);
         print("response ==== $_formattedAddress");
         return _formattedAddress;
       } else return "";
@@ -979,7 +1029,62 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
 
-    Future<LatLng?> getLatLngFromAddress(String address) async {
+
+
+  // Future<String> getAddressFromLatLng(/*Position*/ loc.LocationData position) async {
+  //   String _host = 'https://maps.google.com/maps/api/geocode/json';
+  //   final url = '$_host?key=$googleApiKey&language=en&latlng=${position.latitude},${position.longitude}';
+  //   print("address+url.....$url");
+  //   if (position.latitude != null && position.longitude != null) {
+  //     var response = await http.get(Uri.parse(url));
+  //     logger.i("getAddressFromLatLng..${response.body}");
+  //
+  //     if (response.statusCode == 200) {
+  //       Map data = jsonDecode(response.body);
+  //       if (data["results"].isNotEmpty) {
+  //         // Parse the first result
+  //         var result = data["results"][0];
+  //         String formattedAddress = result["formatted_address"];
+  //         currentLatLongPosition = result["geometry"]["location"];
+  //         originPlaceId = result["place_id"].toString();
+  //
+  //         print("currentLatLongPostion.....${currentLatLongPosition}");
+  //         await getLatLngFromAddress(formattedAddress);
+  //
+  //         // Check if the address is in plus code format and refine it
+  //         if (formattedAddress.contains("plus_code")) {
+  //           // Construct a more readable address from address components
+  //           List addressComponents = result["address_components"];
+  //           String readableAddress = "";
+  //           for (var component in addressComponents) {
+  //             if (component["types"].contains("street_number") ||
+  //                 component["types"].contains("route") ||
+  //                 component["types"].contains("locality")  ||
+  //                 component["types"].contains("administrative_area_level_1") ||
+  //                 component["types"].contains("country")) {
+  //               readableAddress += component["long_name"] + ", ";
+  //             }
+  //           }
+  //           formattedAddress = readableAddress.trim().trimRight(',');
+  //         }
+  //
+  //         print("response ==== $formattedAddress");
+  //         return formattedAddress;
+  //       } else {
+  //         return "No results found";
+  //       }
+  //     } else {
+  //       return "Error: ${response.statusCode}";
+  //     }
+  //   } else {
+  //     return "Invalid position";
+  //   }
+  // }
+
+
+
+
+  Future<LatLng?> getLatLngFromAddress(String address) async {
     final formattedAddress = Uri.encodeQueryComponent(address);
     final url = Uri.parse(
         "https://maps.googleapis.com/maps/api/geocode/json?address=$formattedAddress&key=$googleApiKey");
@@ -1022,6 +1127,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     //print("distance....$distance");
     return distance < thresholdInMeters;
+  }
+
+  double getDistance({
+    required LatLng firstLocation,
+    required LatLng secondLocation,
+  }) {
+    double distance = Geolocator.distanceBetween(
+      firstLocation.latitude,
+      firstLocation.longitude,
+      secondLocation.latitude,
+      secondLocation.longitude,
+    );
+    return distance ;
   }
 
   Future<void> cancelTracking() async {
