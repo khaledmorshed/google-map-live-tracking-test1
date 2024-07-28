@@ -495,30 +495,30 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             child: Text("show route"),
           ),
-          // TextButton(
-          //   onPressed: () async{
-          //     setState(() {
-          //       movingMood = "walk";
-          //       isNeedToRedraw = true;
-          //     });
-          //     //updateCurrentLocation();
-          //     //await _deleteDatabase();
-          //    // updateCurrentLocationWithLocationPackage();
-          //   },
-          //   child: Text("walking"),
-          // ),
-          // TextButton(
-          //   onPressed: () async{
-          //     setState(() {
-          //       movingMood = "drive";
-          //       isNeedToRedraw = true;
-          //     });
-          //     //updateCurrentLocation();
-          //   //  await _deleteDatabase();
-          //     //updateCurrentLocationWithLocationPackage();
-          //   },
-          //   child: Text("driving"),
-          // ),
+          TextButton(
+            onPressed: () async{
+              setState(() {
+                movingMood = "walk";
+                isNeedToRedraw = true;
+              });
+              //updateCurrentLocation();
+              //await _deleteDatabase();
+             // updateCurrentLocationWithLocationPackage();
+            },
+            child: Text("walking"),
+          ),
+          TextButton(
+            onPressed: () async{
+              setState(() {
+                movingMood = "drive";
+                isNeedToRedraw = true;
+              });
+              //updateCurrentLocation();
+            //  await _deleteDatabase();
+              //updateCurrentLocationWithLocationPackage();
+            },
+            child: Text("driving"),
+          ),
           TextButton(
             onPressed: () async {
               await cancelTracking();
