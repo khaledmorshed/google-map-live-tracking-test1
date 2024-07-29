@@ -10,6 +10,7 @@ import 'package:google_map_live_tracking/providers/home_provider.dart';
 import 'package:google_map_live_tracking/screens/home_screen.dart';
 import 'package:google_map_live_tracking/splash_screen.dart';
 import 'package:google_map_live_tracking/utils/global_classes/local_notification_service.dart';
+import 'package:google_map_live_tracking/utils/global_classes/navigation_service_without_context.dart';
 import 'package:google_map_live_tracking/utils/route/route_class.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -44,6 +45,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
+      navigatorKey: NavigationService.navigatorKey,
       home: const SplashScreen(),
       onGenerateRoute: (route)=> RouteClass.onGenerateRoute(route),
     );

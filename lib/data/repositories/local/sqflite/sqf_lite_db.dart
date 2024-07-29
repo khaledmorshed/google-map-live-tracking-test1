@@ -77,7 +77,7 @@ class SqfLitDb{
     String path = join(databasesPath, databaseName);
     // Check if the database exists
     bool doesDatabaseExist = await databaseExists(path);
-    print("doesDatabaseExist..sale...$doesDatabaseExist.....$tableName....map=");
+    print("doesDatabaseExist..sale...$doesDatabaseExist.....$tableName....value=$map");
     print("createTableInformation////....$createTableInformation");
     if(doesDatabaseExist == false){
       createTableInfo = createTableInformation;
@@ -85,6 +85,7 @@ class SqfLitDb{
       final db = await _initDb(databaseName: databaseName);
       return db.insert(tableName, map);
     }else{
+      print("doesDatabaseExist..firstTime...$doesDatabaseExist.....$tableName....value=$map");
       final db = await _initDb(databaseName: databaseName);
       await _createAnewTableWithoutBuildInFunction(db, createTableInformation);
       return db.insert(tableName, map);

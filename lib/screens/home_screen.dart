@@ -11,6 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geocoding/geocoding.dart' as geoLoc;
 import 'package:geolocator/geolocator.dart';
+import 'package:google_map_live_tracking/providers/home_provider.dart';
 import 'package:google_map_live_tracking/screens/show_tracked_screen.dart';
 import 'package:google_map_live_tracking/utils/app_config.dart';
 import 'package:google_map_live_tracking/widgets/custom_widgets/custom_elevated_button.dart';
@@ -18,50 +19,118 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:location/location.dart' as loc;
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/repositories/local/sqflite/sqf_lite_db.dart';
 import '../utils/global_classes/call_class.dart';
 import '../utils/global_classes/color_manager.dart';
 import '../utils/global_classes/debounce_class.dart';
+import '../utils/global_classes/navigation_service_without_context.dart';
 import '../utils/global_variable.dart';
 import '../widgets/custom_widgets/custom_text_form_field.dart';
+import 'package:rxdart/rxdart.dart';
+
+
 
 // fetch location for updating
-Future<loc.LocationData> fetchCurrentLocationWithLocationPackageForBackground() async {
-  try {
-    bool serviceEnabled;
-    loc.PermissionStatus permissionStatus;
-    final locationController = loc.Location();
+// Future<loc.LocationData> fetchCurrentLocationWithLocationPackageForBackground() async {
+//   try {
+//     print("loc....-2");
+//     bool serviceEnabled;
+//     print("loc....-1");
+//     loc.PermissionStatus permissionStatus;
+//     print("loc....0");
+//     final locationController = loc.Location();
+//     print("loc....1");
+//
+//     // Check if location service is enabled
+//     // serviceEnabled = await locationController.serviceEnabled();
+//     // print("loc....2");
+//     // if (serviceEnabled) {
+//     //   print("loc....3");
+//     //   // Request to enable location service
+//     //   serviceEnabled = await locationController.requestService();
+//     //   print("loc....4");
+//     //   if (!serviceEnabled) {
+//     //     print("loc....5");
+//     //     return Future.error('Location services are disabled.');
+//     //   }
+//     // }
+//     // print("loc....6");
+//     // // Check the permission status
+//     // permissionStatus = await locationController.hasPermission();
+//     // print("loc....7");
+//     // if (permissionStatus == loc.PermissionStatus.denied) {
+//     //   print("loc....8");
+//     //   // Request location permission
+//     //   permissionStatus = await locationController.requestPermission();
+//     //   print("loc....9");
+//     //   if (permissionStatus != loc.PermissionStatus.granted) {
+//     //     print("loc....10");
+//     //     return Future.error('Location permissions are denied.');
+//     //   }
+//     // }
+//     print("loc....11");
+//     // Get the current location
+//     return await locationController.getLocation();
+//   } catch (err) {
+//     print("Error: $err");
+//     return Future.error(err);
+//   }
+// }
 
-    // Check if location service is enabled
-    serviceEnabled = await locationController.serviceEnabled();
-    if (serviceEnabled) {
 
-      // Request to enable location service
-      serviceEnabled = await locationController.requestService();
-      if (!serviceEnabled) {
-        return Future.error('Location services are disabled.');
-      }
-    }
 
-    // Check the permission status
-    permissionStatus = await locationController.hasPermission();
-    if (permissionStatus == loc.PermissionStatus.denied) {
-      // Request location permission
-      permissionStatus = await locationController.requestPermission();
-      if (permissionStatus != loc.PermissionStatus.granted) {
-        return Future.error('Location permissions are denied.');
-      }
-    }
-
-    // Get the current location
-    return await locationController.getLocation();
-  } catch (err) {
-    print("Error: $err");
-    return Future.error(err);
-  }
+Future<void> _deleteDatabase()async{
+  CallClass.getInstance(isStart: true);
+  var obj = CallClass.getInstance();
+  print("obj..del.1..${obj.isStart}");
+  await SqfLitDb.deleteDatabaseFile(databaseName: databaseName);
+  CallClass.getInstance(isStart: false);
+  var obj2 = CallClass.getInstance();
+  print("obj..del.2..${obj2.isStart}");
 }
+
+
+Future<Position> fetchCurrentLocationWithLocationPackageForBackground() async {
+  bool serviceEnabled;
+  LocationPermission permission;
+
+  serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  if (!serviceEnabled) {
+    return Future.error('Location services are disabled.');
+  }
+
+  permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error(
+          'Location permissions are permanently denied, we cannot request permissions.');
+    }
+
+    if (permission == LocationPermission.denied) {
+      return Future.error('Location permissions are denied');
+    }
+  }
+
+  Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high);
+
+  await CallClass.storeDataInSqflite(latitude: position.latitude, longitude: position.longitude);
+
+
+
+  //firstTimeCurretnLocaton....LatLng(23.722151, 90.4306274)
+  //getAddressFromLatLng....LatLng(23.7220806,  90.43066689999999)
+  //getLatLngFromAddress....LatLng(23.804093,  90.4152376)
+
+
+  return position;
+}
+
+
 
 // this will be used as notification channel id
 const notificationChannelId = 'my_foreground';
@@ -117,7 +186,7 @@ Future<void> initializeService() async {
       autoStart: true,
 
       // this will be executed when app is in foreground in separated isolate
-   //   onForeground: onStart,
+      onForeground: onStart,
 
       // you have to enable background fetch capability on xcode project
       onBackground: onIosBackground,
@@ -144,6 +213,7 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
+  await _deleteDatabase();
   print("test...1");
   // Only available for flutter 3.0.0 and later
   DartPluginRegistrant.ensureInitialized();
@@ -181,25 +251,25 @@ void onStart(ServiceInstance service) async {
   print("test...9");
 
   // bring to foreground
-  Timer.periodic(const Duration(seconds: 5), (timer) async {
+  Timer.periodic(const Duration(seconds: 4), (timer) async {
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
         /// OPTIONAL for use custom notification
         /// the notification id must be equals with AndroidConfiguration when you call configure() method.
         print("test...11");
-        flutterLocalNotificationsPlugin.show(
-          888,
-          'COOL SERVICE',
-          'Awesome ${DateTime.now()}',
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'my_foreground',
-              'MY FOREGROUND SERVICE',
-              icon: 'ic_bg_service_small',
-              ongoing: true,
-            ),
-          ),
-        );
+        // flutterLocalNotificationsPlugin.show(
+        //   888,
+        //   'COOL SERVICE',
+        //   'Awesome ${DateTime.now()}',
+        //   const NotificationDetails(
+        //     android: AndroidNotificationDetails(
+        //       'my_foreground',
+        //       'MY FOREGROUND SERVICE',
+        //       icon: 'ic_bg_service_small',
+        //       ongoing: true,
+        //     ),
+        //   ),
+        // );
 
         // // if you don't using custom notification, uncomment this
         // service.setForegroundNotificationInfo(
@@ -209,20 +279,43 @@ void onStart(ServiceInstance service) async {
         dynamic locationData;
         try{
           print("test...12");
-          if(CallClass.isNowCall)locationData = await fetchCurrentLocationWithLocationPackageForBackground();
+         // print("CallClass.isNowCall...${Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall}");
+         //  Consumer<HomeProvider>(
+         //      builder: (context, provider, _) {
+         //        print("CallClass.isNowCall.5..");
+         //        print("CallClass.isNowCall.51..${Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall}");
+         //
+         //        return SizedBox.shrink();
+         //      }
+         //  );
+
+          // CallClass.isNowCall.stream.listen((value) {
+          //   print('Counter value: $value');
+          // });
+
+         // print("getCoun...${CallClass().getCounterValue()}");
+          print("getIsNowCallValue...13");
+
+          //  print("CallClass.isNowCall.2..${Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall}");
+          print("getIsNowCallValue...33}");
+
+          //if(Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall){
+          //  print("CallClass.isNowCall.2..${Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall}");
+            locationData = await fetchCurrentLocationWithLocationPackageForBackground();
+        //  }
           print("latalongdta....${locationData}");
-          service.setForegroundNotificationInfo(
-            title: "My App Service",
-            content: "lat=${locationData.latitude}, long=${locationData.longitude}",
-          );
+          // service.setForegroundNotificationInfo(
+          //   title: "My App Service",
+          //   content: "lat=${locationData.latitude}, long=${locationData.longitude}",
+          // );
 
         }catch(err){
           print("backError...$err");
 
-          service.setForegroundNotificationInfo(
-            title: "My App Service",
-            content: "Error: ${DateTime.now()}",
-          );
+          // service.setForegroundNotificationInfo(
+          //   title: "My App Service",
+          //   content: "Error: ${DateTime.now()}",
+          // );
 
           // service.setForegroundNotificationInfo(
           //   title: "My App Service",
@@ -247,13 +340,13 @@ void onStart(ServiceInstance service) async {
       device = iosInfo.model;
     }
 
-    service.invoke(
-      'update',
-      {
-        "current_date": DateTime.now().toIso8601String(),
-        "device": device,
-      },
-    );
+    // service.invoke(
+    //   'update',
+    //   {
+    //     "current_date": DateTime.now().toIso8601String(),
+    //     "device": device,
+    //   },
+    // );
   });
 }
 //end for background
@@ -320,6 +413,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void _callDataForStartingLocation() {
     searchLocations(startLocationController.text);
   }
+
+
+
 
   //search for starting
   Widget _buildSearchForStartingLocation(ScrollController controller){
@@ -449,7 +545,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> initialize() async {
     await clearData();
-    await _deleteDatabase();
     await setCustomMarkerIcon();
    // _showBottomModalWithoutDateButton();
     await fetchingOnlyCurrentAddress();
@@ -485,6 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: ColorManager.homeBg,
@@ -501,6 +597,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 movingMood = "walk";
                 isNeedToRedraw = true;
               });
+             // await deleteTable();
+              // CallClass.isNowCall.stream.listen((value) {
+              //   print('Counter valueww: $value');
+              // });
               //updateCurrentLocation();
               //await _deleteDatabase();
              // updateCurrentLocationWithLocationPackage();
@@ -523,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               await cancelTracking();
               await clearData();
-              fetchCurrentLocationWithLocationPackage();
+              //fetchCurrentLocationWithLocationPackage();
             },
             child: Text("end"),
           ),
@@ -548,11 +648,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 zoom: 13,
               ),
               markers: {
-                Marker(
-                  markerId: const MarkerId("currentLocation"),
-                  icon: currentIcon,
-                  position: currentPosition!,
-                ),
+                // Marker(
+                //   markerId: const MarkerId("currentLocation"),
+                //   icon: currentIcon,
+                //   position: currentPosition!,
+                // ),
                 /*if(!isTwoPointSame)*/Marker(
                   markerId: MarkerId("sourceLocation"),
                   icon: originIcon,
@@ -672,13 +772,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             //  await setRoute();
                             // final coordinateList = await fetchPolylinePointsWithGoogleApi();
                             await cancelTracking();
-                            await _deleteDatabase();
+                            await deleteTable();
                             setState(() {
                               isNeedToRedraw = false;
                             });
+                            //await updateCurrentLocation();
+                            await updateCurrentLocationWithGeoLocatorPackage();
                             final coordinateList = await computeRoutes();
                             await generatePolyLineFromPoint(coordinateList);
-                            //await updateCurrentLocation();
                             completerController.future.then((controller) {
                               controller.animateCamera(
                                 CameraUpdate.newCameraPosition(
@@ -689,7 +790,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               );
                             });
-                            await updateCurrentLocationWithLocationPackage();
                             },
                           text: "Start",
                           textColor: Colors.white,
@@ -727,9 +827,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> fetchingOnlyCurrentAddress()async{
     //Position position = await fetchCurrentLocationWithGeoCoding();
-    loc.LocationData position = await fetchCurrentLocationWithLocationPackage();
-    CallClass.isNowCall = true;
+   // loc.LocationData position = await fetchCurrentLocationWithLocationPackage();
+    Position position = await fetchCurrentLocationWithGeolocatorPackage();
+   // print("CallClass.isNowCall..3..${CallClass.isNowCall}");
     currentAddress = await getAddressFromLatLng(position);
+    startLocationController.text = currentAddress;
     setState(() {
       //startLocationController.text = currentAddress;
     });
@@ -738,109 +840,220 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
 
-  // fetch location for updating
-  Future<loc.LocationData> fetchCurrentLocationWithLocationPackage()async{
-    try{
-      bool serviceEnable;
-      loc.PermissionStatus permissionStatus;
-      //to check service enable status
-      serviceEnable = await locationController.serviceEnabled();
-      if(serviceEnable){
-        serviceEnable = await locationController.requestService();
-      }else{
+  // // fetch location for updating
+  // Future<loc.LocationData> fetchCurrentLocationWithLocationPackage()async{
+  //   try{
+  //     bool serviceEnable;
+  //     loc.PermissionStatus permissionStatus;
+  //     //to check service enable status
+  //     serviceEnable = await locationController.serviceEnabled();
+  //     if(serviceEnable){
+  //       serviceEnable = await locationController.requestService();
+  //     }else{
+  //       return Future.error('Location permissions are denied');
+  //     }
+  //
+  //     //check the permission status
+  //     permissionStatus = await locationController.hasPermission();
+  //     if(permissionStatus == loc.PermissionStatus.denied){
+  //       permissionStatus = await locationController.requestPermission();
+  //       if(permissionStatus != loc.PermissionStatus.granted){
+  //         return Future.error('Location permissions are denied');
+  //       }
+  //     }
+  //
+  //     final locationData = await locationController.getLocation();
+  //     currentPosition = LatLng(locationData.latitude!, locationData.longitude!);
+  //     originLocation = LatLng(locationData.latitude!, locationData.longitude!);
+  //     currentAddress = await getAddressFromLatLng(locationData);
+  //     startLocationController.text = currentAddress;
+  //     setState(() {
+  //
+  //     });
+  //     return locationData;
+  //
+  //
+  //   }catch(err){
+  //     print("err...$err");
+  //   }
+  //   return Future.error('Location permissions are denied');
+  // }
+
+  Future<Position> fetchCurrentLocationWithGeolocatorPackage() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.deniedForever) {
+        return Future.error(
+            'Location permissions are permanently denied, we cannot request permissions.');
+      }
+
+      if (permission == LocationPermission.denied) {
         return Future.error('Location permissions are denied');
       }
+    }
 
-      //check the permission status
-      permissionStatus = await locationController.hasPermission();
-      if(permissionStatus == loc.PermissionStatus.denied){
-        permissionStatus = await locationController.requestPermission();
-        if(permissionStatus != loc.PermissionStatus.granted){
-          return Future.error('Location permissions are denied');
-        }
+    Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+    currentPosition = LatLng(position.latitude, position.longitude);
+  //  originLocation = LatLng(position.latitude, position.longitude);
+
+
+    print("firstTimeCurretnLocaton....${logger}");
+    logger.i("firstTimeCurretnLocaton....$currentPosition");
+
+    //firstTimeCurretnLocaton....LatLng(23.722151, 90.4306274)
+    //getAddressFromLatLng....LatLng(23.7220806,  90.43066689999999)
+    //getLatLngFromAddress....LatLng(23.804093,  90.4152376)
+
+    setState(() {});
+    return position;
+  }
+
+  Future<void> updateCurrentLocationWithGeoLocatorPackage() async {
+    final value = await fetchCurrentLocationWithGeolocatorPackage();
+    originLocation = LatLng(value.latitude, value.longitude);
+    setState(() {
+
+    });
+
+    positionStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 2,
+      ),
+    ).listen((Position position) async{
+      print("listen...");
+      currentPosition = LatLng(position.latitude, position.longitude);
+      setState(() {});
+     // await storeDataInSqflite(latitude: position.latitude, longitude: position.longitude);
+      //  Timer(const Duration(seconds: 10), (){
+      //    storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+      //  });
+
+      // bool isSame = areLocationsClose(
+      //   currentLocation: currentPosition!,
+      //   originOrDestinationLocation: originLocation,
+      //   thresholdInMeters: 30,
+      // );
+
+      //print("isSame....$isSame");
+
+      // if (isSame){
+      //   isTwoPointSame = true;
+      //   isNeedToRedraw = true;
+      //   originLocation = LatLng(location.latitude!, location.longitude!);
+      //   //currentAddress = await getAddressFromLatLng(position);
+      //   //final coordinateList = await fetchPolylinePointsWithGoogleApi();
+      //   final coordinateList = await computeRoutes();
+      //   generatePolyLineFromPoint(coordinateList);
+      //   setState(() {});
+      // } else {
+      //   isTwoPointSame = false;
+      //   if(isNeedToRedraw){
+      //     originLocation = LatLng(location.latitude!, location.longitude!);
+      //     final coordinateList = await computeRoutes();
+      //     generatePolyLineFromPoint(coordinateList);
+      //   }
+      //   setState(() {});
+      // }
+
+      // Check if the user has deviated from the original route
+      if (await hasDeviatedFromRoute(currentPosition!, originalRoutePoints, threshold: 50)) {
+        setState(() {
+          originLocation = LatLng(position.latitude, position.longitude);
+        });
+        print("hasDeviatedFromRoute.....1");
+        isNeedToRedraw = true;
+        final newRoutePoints = await computeRoutes();
+        generatePolyLineFromPoint(newRoutePoints);
+        isNeedToRedraw = false;
       }
 
-      final locationData = await locationController.getLocation();
-      currentPosition = LatLng(locationData.latitude!, locationData.longitude!);
-      originLocation = LatLng(locationData.latitude!, locationData.longitude!);
-      currentAddress = await getAddressFromLatLng(locationData);
-      startLocationController.text = currentAddress;
-      setState(() {
+    });
 
-      });
-      return locationData;
-
-
-    }catch(err){
-      print("err...$err");
-    }
-    return Future.error('Location permissions are denied');
+    // final GoogleMapController googleMapController = await completerController.future;
+    // googleMapController.animateCamera(CameraUpdate.newCameraPosition(
+    //   CameraPosition(
+    //     zoom: 15,
+    //     target: LatLng(currentPosition!.latitude, currentPosition!.longitude),
+    //   ),
+    // ));
   }
 
 
-  Future<void> updateCurrentLocationWithLocationPackage()async{
-    try{
-      await fetchCurrentLocationWithLocationPackage();
-      //first time get location
-      locationSubscription = await locationController.onLocationChanged.listen((location)async{
-        currentPosition = LatLng(location.latitude!, location.longitude!);
-        setState(() {});
-        await storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
-       //  Timer(const Duration(seconds: 10), (){
-       //    storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
-       //  });
 
-        // bool isSame = areLocationsClose(
-        //   currentLocation: currentPosition!,
-        //   originOrDestinationLocation: originLocation,
-        //   thresholdInMeters: 30,
-        // );
-
-        //print("isSame....$isSame");
-
-        // if (isSame){
-        //   isTwoPointSame = true;
-        //   isNeedToRedraw = true;
-        //   originLocation = LatLng(location.latitude!, location.longitude!);
-        //   //currentAddress = await getAddressFromLatLng(position);
-        //   //final coordinateList = await fetchPolylinePointsWithGoogleApi();
-        //   final coordinateList = await computeRoutes();
-        //   generatePolyLineFromPoint(coordinateList);
-        //   setState(() {});
-        // } else {
-        //   isTwoPointSame = false;
-        //   if(isNeedToRedraw){
-        //     originLocation = LatLng(location.latitude!, location.longitude!);
-        //     final coordinateList = await computeRoutes();
-        //     generatePolyLineFromPoint(coordinateList);
-        //   }
-        //   setState(() {});
-        // }
-
-        // Check if the user has deviated from the original route
-        if (await hasDeviatedFromRoute(currentPosition!, originalRoutePoints, threshold: 20)) {
-          print("hasDeviatedFromRoute.....1");
-          isNeedToRedraw = true;
-          final newRoutePoints = await computeRoutes();
-          generatePolyLineFromPoint(newRoutePoints);
-          isNeedToRedraw = false;
-        }
-
-        //LatLng(23.7221459, 90.4305929)
-        // // LatLng(23.722445377416133, 90.43041910976171)
-        // print("currenPostion....$currentPosition");
-        // //currentPosition =LatLng(23.726731821683835, 90.42114805430174);
-        // // Reverse geocode to get address
-        // currentAddress = await getAddressFromLatLng(currentPosition!);
-        // startLocationController.text = currentAddress;
-        // setState(() {
-        //
-        // });
-      });
-      locationController.enableBackgroundMode(enable: true);
-    }catch(err){
-    }
-  }
+  // Future<void> updateCurrentLocationWithLocationPackage()async{
+  //   try{
+  //    // await fetchCurrentLocationWithLocationPackage();
+  //     //first time get location
+  //     locationSubscription = await locationController.onLocationChanged.listen((location)async{
+  //       currentPosition = LatLng(location.latitude!, location.longitude!);
+  //       setState(() {});
+  //       await storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+  //      //  Timer(const Duration(seconds: 10), (){
+  //      //    storeDataInSqflite(latitude: location.latitude!, longitude: location.longitude!);
+  //      //  });
+  //
+  //       // bool isSame = areLocationsClose(
+  //       //   currentLocation: currentPosition!,
+  //       //   originOrDestinationLocation: originLocation,
+  //       //   thresholdInMeters: 30,
+  //       // );
+  //
+  //       //print("isSame....$isSame");
+  //
+  //       // if (isSame){
+  //       //   isTwoPointSame = true;
+  //       //   isNeedToRedraw = true;
+  //       //   originLocation = LatLng(location.latitude!, location.longitude!);
+  //       //   //currentAddress = await getAddressFromLatLng(position);
+  //       //   //final coordinateList = await fetchPolylinePointsWithGoogleApi();
+  //       //   final coordinateList = await computeRoutes();
+  //       //   generatePolyLineFromPoint(coordinateList);
+  //       //   setState(() {});
+  //       // } else {
+  //       //   isTwoPointSame = false;
+  //       //   if(isNeedToRedraw){
+  //       //     originLocation = LatLng(location.latitude!, location.longitude!);
+  //       //     final coordinateList = await computeRoutes();
+  //       //     generatePolyLineFromPoint(coordinateList);
+  //       //   }
+  //       //   setState(() {});
+  //       // }
+  //
+  //       // Check if the user has deviated from the original route
+  //       if (await hasDeviatedFromRoute(currentPosition!, originalRoutePoints, threshold: 20)) {
+  //         print("hasDeviatedFromRoute.....1");
+  //         isNeedToRedraw = true;
+  //         final newRoutePoints = await computeRoutes();
+  //         generatePolyLineFromPoint(newRoutePoints);
+  //         isNeedToRedraw = false;
+  //       }
+  //
+  //       //LatLng(23.7221459, 90.4305929)
+  //       // // LatLng(23.722445377416133, 90.43041910976171)
+  //       // print("currenPostion....$currentPosition");
+  //       // //currentPosition =LatLng(23.726731821683835, 90.42114805430174);
+  //       // // Reverse geocode to get address
+  //       // currentAddress = await getAddressFromLatLng(currentPosition!);
+  //       // startLocationController.text = currentAddress;
+  //       // setState(() {
+  //       //
+  //       // });
+  //     });
+  //     locationController.enableBackgroundMode(enable: true);
+  //   }catch(err){
+  //   }
+  // }
 
 
 
@@ -908,6 +1121,9 @@ class _HomeScreenState extends State<HomeScreen> {
           //    await storeDataInSqflite(latitude: points.latitude, longitude: points.longitude);
           // }).toList();
           originalRoutePoints = coordinates.map((point) => LatLng(point.latitude, point.longitude)).toList();
+          setState(() {
+
+          });
           return originalRoutePoints;
         }
       } else {
@@ -984,7 +1200,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
 
-  Future<String> getAddressFromLatLng(/*Position*/ loc.LocationData position) async {
+  Future<String> getAddressFromLatLng(Position /*loc.LocationData */position) async {
     // String _host = 'https://maps.google.com/maps/api/geocode/json';
     // final url = '$_host?key=$googleApiKey&language=en&latlng=${position.latitude},${position.longitude}';
     String _host = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
@@ -1148,6 +1364,7 @@ class _HomeScreenState extends State<HomeScreen> {
     //   isUpdateCurrentLocation = false;
     // });
     locationSubscription?.cancel();  // Cancel the subscription
+    positionStreamSubscription?.cancel();
     locationController.enableBackgroundMode(enable: false);
   }
 
@@ -1239,11 +1456,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
   Future<void> _deleteDatabase()async{
+    CallClass.getInstance(isStart: true);
+    var obj = CallClass.getInstance();
+    print("obj..del.1..${obj.isStart}");
     await SqfLitDb.deleteDatabaseFile(databaseName: databaseName);
+    CallClass.getInstance(isStart: false);
+    var obj2 = CallClass.getInstance();
+    print("obj..del.2..${obj2.isStart}");
   }
 
   Future<void> deleteTable()async{
-    await SqfLitDb.deleteAnyTableDataFromLocalDb(tableName: tableName);
+    await SqfLitDb.deleteAnyTableDataFromLocalDb(tableName: tableName, databaseName: databaseName);
   }
 
   storeDataInSqflite({double latitude = 0, double longitude = 0})async{
@@ -1263,19 +1486,20 @@ class _HomeScreenState extends State<HomeScreen> {
       infoWindow: InfoWindow(title: "Selected Location"),
     );
 
-    loc.LocationData value = convertLatLngToLocationData(tappedPoint);
-    print("tappedTest....${value}");
-    print("tappedTest....${value.latitude}");
+    //loc.LocationData value = convertLatLngToLocationData(tappedPoint);
+    final value = convertLocationDataToPosition(tappedPoint);
+   // print("tappedTest....${value}");
+   // print("tappedTest....${value.latitude}");
 
     markers[markerId] = marker;
     if(isDestinationField) {
       destination = tappedPoint;
-      loc.LocationData value = convertLatLngToLocationData(destination);
+    //  loc.LocationData value = convertLatLngToLocationData(destination);
       destinationController.text = await getAddressFromLatLng(value);
     }
     else {
       originLocation = tappedPoint;
-      loc.LocationData value = convertLatLngToLocationData(originLocation);
+     // loc.LocationData value = convertLatLngToLocationData(originLocation);
       startLocationController.text = await getAddressFromLatLng(value);
     }
 
@@ -1289,6 +1513,22 @@ class _HomeScreenState extends State<HomeScreen> {
       'longitude': latLng.longitude,
     });
   }
+
+  Position convertLocationDataToPosition(LatLng locationData) {
+    return Position(
+      latitude: locationData.latitude ?? 0.0,
+      longitude: locationData.longitude ?? 0.0,
+      timestamp: DateTime.now(),
+      accuracy: 00,
+      altitude: 0.0,
+      heading: 0.0,
+      speed:  0.0,
+      speedAccuracy: 0.0,
+      altitudeAccuracy: 0,
+      headingAccuracy: 0,
+    );
+  }
+
 
 }
 
