@@ -291,9 +291,11 @@ class SqfLitDb{
       } else {
         print("delete..direct...$tableName");
         await db.delete(tableName);
+        print("delete..direct...success");
       }
       return true;
     }catch(err){
+      print("errD..$err");
       return false;
     }
   }

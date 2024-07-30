@@ -105,3 +105,4 @@ const Color selectButtonTextColor = ColorManager.whiteOnly;
 
 String databaseName = "google_map_db";
 String tableName = "google_map_data";
+int distanceFilter = 20;

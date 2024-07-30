@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -83,13 +84,9 @@ import 'package:rxdart/rxdart.dart';
 
 
 Future<void> _deleteDatabase()async{
-  CallClass.getInstance(isStart: true);
-  var obj = CallClass.getInstance();
-  print("obj..del.1..${obj.isStart}");
-  await SqfLitDb.deleteDatabaseFile(databaseName: databaseName);
-  CallClass.getInstance(isStart: false);
-  var obj2 = CallClass.getInstance();
-  print("obj..del.2..${obj2.isStart}");
+  print("obj..del.1..");
+  await SqfLitDb.deleteDatabaseFile(databaseName: "google_map_db");
+
 }
 
 
@@ -213,7 +210,7 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  await _deleteDatabase();
+ // await _deleteDatabase();
   print("test...1");
   // Only available for flutter 3.0.0 and later
   DartPluginRegistrant.ensureInitialized();
@@ -251,7 +248,7 @@ void onStart(ServiceInstance service) async {
   print("test...9");
 
   // bring to foreground
-  Timer.periodic(const Duration(seconds: 4), (timer) async {
+  Timer.periodic(const Duration(seconds: 10), (timer) async {
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
         /// OPTIONAL for use custom notification
@@ -276,7 +273,7 @@ void onStart(ServiceInstance service) async {
         //   title: "My App Service",
         //   content: "Updated at ${DateTime.now()}",
         // );
-        dynamic locationData;
+        Position locationData;
         try{
           print("test...12");
          // print("CallClass.isNowCall...${Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall}");
@@ -301,21 +298,31 @@ void onStart(ServiceInstance service) async {
 
           //if(Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall){
           //  print("CallClass.isNowCall.2..${Provider.of<HomeProvider>(NavigationService.currentContext, listen: false).isNowCall}");
-            locationData = await fetchCurrentLocationWithLocationPackageForBackground();
+            //locationData = await fetchCurrentLocationWithLocationPackageForBackground();
         //  }
-          print("latalongdta....${locationData}");
-          // service.setForegroundNotificationInfo(
-          //   title: "My App Service",
-          //   content: "lat=${locationData.latitude}, long=${locationData.longitude}",
-          // );
+          locationData = await fetchCurrentLocationWithLocationPackageForBackground();
+
+          Geolocator.getPositionStream(
+            locationSettings: LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: distanceFilter,
+            ),
+          ).listen((Position position) async{
+            locationData = position;
+            CallClass.storeDataInSqflite(latitude: locationData.latitude, longitude: locationData.longitude);
+            service.setForegroundNotificationInfo(
+              title: "Lat Long",
+              content: "lat: ${locationData.latitude}, long = ${locationData.longitude}",
+            );
+          });
 
         }catch(err){
           print("backError...$err");
 
-          // service.setForegroundNotificationInfo(
-          //   title: "My App Service",
-          //   content: "Error: ${DateTime.now()}",
-          // );
+          service.setForegroundNotificationInfo(
+            title: "My App Service",
+            content: "Error: ${DateTime.now()}",
+          );
 
           // service.setForegroundNotificationInfo(
           //   title: "My App Service",
@@ -605,7 +612,7 @@ class _HomeScreenState extends State<HomeScreen> {
               //await _deleteDatabase();
              // updateCurrentLocationWithLocationPackage();
             },
-            child: Text("walking"),
+            child: Text("walke"),
           ),
           TextButton(
             onPressed: () async{
@@ -617,7 +624,7 @@ class _HomeScreenState extends State<HomeScreen> {
             //  await _deleteDatabase();
               //updateCurrentLocationWithLocationPackage();
             },
-            child: Text("driving"),
+            child: Text("drive"),
           ),
           TextButton(
             onPressed: () async {
@@ -627,12 +634,13 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             child: Text("end"),
           ),
-    
-          // if(isTwoPointSame) TextButton(
-          //   onPressed: () async {
-          //   },
-          //   child: Text("two same"),
-          // ),
+
+         TextButton(
+            onPressed: () async {
+              await deleteTable();
+            },
+            child: Text("delete t"),
+          ),
     
         ],
       ),
@@ -925,11 +933,39 @@ class _HomeScreenState extends State<HomeScreen> {
 
     });
 
-    positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: LocationSettings(
+
+    late LocationSettings locationSettings;
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: distanceFilter,
+          // forceLocationManager: true,
+           intervalDuration: const Duration(seconds: 10),
+          // foregroundNotificationConfig: const ForegroundNotificationConfig(
+          //   notificationText:
+          //   "Example app will continue to receive your location even when you aren't using it",
+          //   notificationTitle: "Running in Background",
+          //   enableWakeLock: true,
+          // )
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS) {
+      locationSettings = AppleSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 2,
-      ),
+        activityType: ActivityType.fitness,
+        distanceFilter: distanceFilter,
+        pauseLocationUpdatesAutomatically: true,
+        showBackgroundLocationIndicator: false,
+      );
+    } else {
+      locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: distanceFilter,
+      );
+    }
+
+    positionStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: locationSettings
     ).listen((Position position) async{
       print("listen...");
       currentPosition = LatLng(position.latitude, position.longitude);
@@ -1116,10 +1152,10 @@ class _HomeScreenState extends State<HomeScreen> {
           final points = routes[0]['polyline']['encodedPolyline'] as String;
           final coordinates = PolylinePoints().decodePolyline(points);
           // ///TODO REMOVE
-          //  await _deleteDatabase();
-          // coordinates.map((points)async{
-          //    await storeDataInSqflite(latitude: points.latitude, longitude: points.longitude);
-          // }).toList();
+           await deleteTable();
+          coordinates.map((points)async{
+             await storeDataInSqflite(latitude: points.latitude, longitude: points.longitude);
+          }).toList();
           originalRoutePoints = coordinates.map((point) => LatLng(point.latitude, point.longitude)).toList();
           setState(() {
 
