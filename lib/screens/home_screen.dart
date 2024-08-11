@@ -1568,3 +1568,116 @@ class _HomeScreenState extends State<HomeScreen> {
 
 }
 
+
+
+/*
+//chat
+LatLng findNearestPointOnRoad(LatLng currentLocation, List<LatLng> roadPoints) {
+  double minDistance = double.infinity;
+  LatLng nearestPoint = LatLng(0, 0);
+
+  for (int i = 0; i < roadPoints.length - 1; i++) {
+    LatLng p1 = roadPoints[i];
+    LatLng p2 = roadPoints[i + 1];
+
+    LatLng closestPoint = closestPointOnLineSegment(currentLocation, p1, p2);
+    double distance = calculateDistance(currentLocation, closestPoint);
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestPoint = closestPoint;
+    }
+  }
+
+  return nearestPoint;
+}
+//gemin
+LatLng findNearestPointOnRoad(LatLng currentLocation, List<LatLng> roadPoints) {
+  double minDistance = double.infinity;
+  LatLng nearestPoint = LatLng(0, 0);
+
+  for (int i = 0; i < roadPoints.length - 1; i++) {
+    LatLng p1 = roadPoints[i];
+    LatLng p2 = roadPoints[i + 1];
+
+    LatLng closestPoint = closestPointOnLineSegment(currentLocation, p1, p2);
+    double distance = calculateDistance(currentLocation, closestPoint);
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestPoint = closestPoint;
+    }
+  }
+
+  return nearestPoint;
+}
+
+// Helper method to calculate the closest point on a line segment
+//chat
+LatLng getClosestPointOnSegment(LatLng p, LatLng a, LatLng b) {
+  double atobX = b.longitude - a.longitude;
+  double atobY = b.latitude - a.latitude;
+  double atopX = p.longitude - a.longitude;
+  double atopY = p.latitude - a.latitude;
+
+  double len2 = atobX * atobX + atobY * atobY;
+  double dot = atopX * atobX + atopY * atobY;
+  double t = dot / len2;
+
+  if (t < 0) {
+    return a;
+  } else if (t > 1) {
+    return b;
+  } else {
+    return LatLng(a.latitude + atobY * t, a.longitude + atobX * t);
+  }
+}
+
+//gemin
+LatLng closestPointOnLineSegment(LatLng p, LatLng p1, LatLng p2) {
+  // Calculate direction vector of the line segment
+  double dx = p2.longitude - p1.longitude;
+  double dy = p2.latitude - p1.latitude;
+
+  // Calculate vector connecting current point and line segment start
+  double dx1 = p.longitude - p1.longitude;
+  double dy1 = p.latitude - p1.latitude;
+
+  // Project current point onto the line segment vector
+  double projection = (dx1 * dx + dy1 * dy) / (dx * dx + dy * dy);
+
+  // Check if projection is within line segment bounds
+  if (projection < 0 || projection > 1) {
+    // If not within bounds, return the closest endpoint
+    return projection < 0 ? p1 : p2;
+  }
+
+  // Calculate coordinates of the closest point
+  double x = p1.longitude + projection * dx;
+  double y = p1.latitude + projection * dy;
+
+  return LatLng(y, x); // In Flutter, latitude comes first
+}
+
+// Helper method to calculate the distance between two points
+//chat
+double calculateDistance(LatLng p1, LatLng p2) {
+  double dx = p1.longitude - p2.longitude;
+  double dy = p1.latitude - p2.latitude;
+  return sqrt(dx * dx + dy * dy);
+}
+
+
+//gemin
+double calculateDistance(LatLng p1, LatLng p2) {
+  // Use Haversine formula for distance calculation (meters)
+  final double R = 6371e3; // Earth radius in meters
+  final double dLat = radians(p2.latitude - p1.latitude);
+  final double dLon = radians(p2.longitude - p1.longitude);
+  final double a = sin(dLat / 2) * sin(dLat / 2) +
+      cos(radians(p1.latitude)) * cos(radians(p2.latitude)) * sin(dLon / 2) * sin(dLon / 2);
+  final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+  return R * c;
+}
+
+ */
